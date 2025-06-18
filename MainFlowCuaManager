@@ -1,0 +1,636 @@
+# Phân tích luồng chức năng của Manager kèm theo các class code
+
+## 1. Tổng quan hệ thống
+
+Manager là vai trò quản lý trong hệ thống, có nhiệm vụ giám sát hoạt động, phê duyệt nội dung và theo dõi các chỉ số hiệu suất. Dưới đây là phân tích chi tiết kèm theo class code.
+
+## 2. Bảng điều khiển (Dashboard)
+
+### 2.1. Controller
+
+```java
+// ManagerController.java - API endpoint cho dashboard
+@GetMapping("/dashboard")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<ManagerDashboardResponse> getManagerDashboard() {
+    ManagerDashboardResponse dashboardStats = managerService.getDashboardStatistics();
+    return ResponseEntity.ok(dashboardStats);
+}
+
+@GetMapping("/dashboard/enrollments-by-month")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Map<String, Integer>> getEnrollmentsByMonth(@RequestParam(defaultValue = "#{T(java.time.Year).now().getValue()}") int year) {
+    Map<String, Integer> enrollmentsByMonth = managerService.getEnrollmentsByMonth(year);
+    return ResponseEntity.ok(enrollmentsByMonth);
+}
+```
+
+### 2.2. Service
+
+```java
+// ManagerServiceImpl.java - Logic xử lý cho dashboard
+@Override
+public ManagerDashboardResponse getDashboardStatistics() {
+    // Lấy năm hiện tại
+    int currentYear = Year.now().getValue();
+    
+    // Đếm tổng số đăng ký khóa học
+    int totalEnrollments = (int) enrollmentRepository.count();
+    
+    // Đếm số chứng chỉ đã cấp (enrollment đã hoàn thành)
+    int certificatesIssued = countCompletedEnrollments();
+    
+    // Tính phần trăm người dùng đã làm khảo sát
+    double surveyCompletionPercentage = getSurveyCompletionRate();
+    
+    // Đếm số blogs và surveys đang chờ phê duyệt
+    int pendingReviews = countPendingReviews();
+    
+    // Đếm số đăng ký trong năm hiện tại
+    int currentYearEnrollments = countEnrollmentsInYear(currentYear);
+    
+    // Đếm số người đang học (chưa hoàn thành)
+    int inProgressEnrollments = countInProgressEnrollments();
+    
+    // Lấy dữ liệu theo tháng
+    Map<String, Integer> enrollmentsByMonth = getEnrollmentsByMonth(currentYear);
+    Map<String, Integer> certificatesByMonth = getCertificatesByMonth(currentYear);
+    
+    // Tạo và trả về đối tượng response
+    return ManagerDashboardResponse.builder()
+            .totalEnrollments(totalEnrollments)
+            .certificatesIssued(certificatesIssued)
+            .surveyCompletionPercentage(surveyCompletionPercentage)
+            .pendingReviews(pendingReviews)
+            .currentYearEnrollments(currentYearEnrollments)
+            .inProgressEnrollments(inProgressEnrollments)
+            .enrollmentsByMonth(enrollmentsByMonth)
+            .certificatesByMonth(certificatesByMonth)
+            .build();
+}
+```
+
+### 2.3. DTO (Data Transfer Object)
+
+```java
+// ManagerDashboardResponse.java - DTO cho dữ liệu dashboard
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ManagerDashboardResponse {
+    // Thống kê tổng quát
+    private int totalEnrollments;
+    private int certificatesIssued;
+    private double surveyCompletionPercentage;
+    private int pendingReviews;
+    
+    // Thống kê enrollment
+    private int currentYearEnrollments;
+    private int inProgressEnrollments;
+    
+    // Dữ liệu cho biểu đồ
+    private Map<String, Integer> enrollmentsByMonth;
+    private Map<String, Integer> certificatesByMonth;
+}
+```
+
+## 3. Phê duyệt nội dung (Content Review)
+
+### 3.1. Controller
+
+```java
+// ManagerController.java - API endpoint cho phê duyệt blog
+@GetMapping("/content-review/blogs")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<List<BlogResponse>> getPendingBlogs() {
+    List<BlogResponse> pendingBlogs = managerService.getPendingBlogs();
+    return ResponseEntity.ok(pendingBlogs);
+}
+
+@PatchMapping("/content-review/blogs/{blogId}")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<BlogResponse> updateBlogApprovalStatus(
+        @PathVariable Long blogId,
+        @RequestParam ApprovalStatus status) {
+    BlogResponse updatedBlog = managerService.updateBlogApprovalStatus(blogId, status);
+    return ResponseEntity.ok(updatedBlog);
+}
+```
+
+### 3.2. Service
+
+```java
+// ManagerServiceImpl.java - Logic xử lý phê duyệt nội dung
+@Override
+@Transactional
+public List<BlogResponse> getPendingBlogs() {
+    List<Blog> pendingBlogs = blogRepository.findByStatus(ApprovalStatus.PENDING);
+    return pendingBlogs.stream()
+            .map(blog -> {
+                List<String> imageUrls = blogImageRepository.findByBlogPostId(blog.getId())
+                        .stream()
+                        .map(image -> image.getImageUrl())
+                        .collect(Collectors.toList());
+                
+                return BlogResponse.builder()
+                        .id(blog.getId())
+                        .title(blog.getTitle())
+                        .topic(blog.getTopic().getName())
+                        .description(blog.getDescription())
+                        .content(blog.getContent())
+                        .imageUrls(imageUrls)
+                        .authorName(blog.getAuthor().getFullname())
+                        .createdAt(blog.getCreatedAt())
+                        .updatedAt(blog.getUpdatedAt())
+                        .status(blog.getStatus())
+                        .tags(blog.getTags())
+                        .build();
+            })
+            .collect(Collectors.toList());
+}
+
+@Override
+@Transactional
+public BlogResponse updateBlogApprovalStatus(Long blogId, ApprovalStatus status) {
+    Blog blog = blogRepository.findById(blogId)
+            .orElseThrow(() -> new RuntimeException("Blog không tồn tại với ID: " + blogId));
+    
+    blog.setStatus(status);
+    Blog updatedBlog = blogRepository.save(blog);
+    
+    // Mapping đến BlogResponse...
+    // Code đã bị cắt ngắn để đơn giản
+}
+```
+
+### 3.3. Entity và Enum
+
+```java
+// ApprovalStatus.java - Enum cho trạng thái phê duyệt
+public enum ApprovalStatus {
+    PENDING,
+    APPROVED,
+    REJECTED
+}
+
+// Blog.java - Entity chứa trạng thái phê duyệt
+@Entity
+@Data
+public class Blog {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String title;
+    // Các trường khác...
+    
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ApprovalStatus status;
+}
+```
+
+### 3.4. Repository
+
+```java
+// BlogRepository.java - Repository để truy vấn blog theo trạng thái
+@Repository
+public interface BlogRepository extends JpaRepository<Blog, Long> {
+    List<Blog> findByAuthor(User author);
+    List<Blog> findTop3ByStatusOrderByCreatedAtDesc(ApprovalStatus status);
+    List<Blog> findByStatus(ApprovalStatus status);
+    // Các phương thức khác...
+}
+```
+
+## 4. Xuất báo cáo (Reports)
+
+### 4.1. Controller
+
+```java
+// ManagerController.java - API endpoint cho xuất báo cáo
+@GetMapping("/reports/statistics")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Resource> generateStatisticsReport() {
+    byte[] reportData = managerService.generateStatisticsReport();
+    ByteArrayResource resource = new ByteArrayResource(reportData);
+    
+    // Định dạng tên file với timestamp
+    String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+    String filename = "statistics_report_" + timestamp + ".xlsx";
+    
+    HttpHeaders headers = new HttpHeaders();
+    headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename);
+    
+    return ResponseEntity.ok()
+            .headers(headers)
+            .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .body(resource);
+}
+```
+
+### 4.2. Service
+
+```java
+// ManagerServiceImpl.java - Logic tạo báo cáo Excel
+@Override
+public byte[] generateStatisticsReport() {
+    try (Workbook workbook = new XSSFWorkbook()) {
+        // Tạo sheet thống kê chính
+        Sheet mainStats = workbook.createSheet("Thống kê tổng quan");
+        createMainStatsSheet(mainStats);
+        
+        // Tạo sheet chi tiết đăng ký
+        Sheet enrollmentSheet = workbook.createSheet("Chi tiết đăng ký");
+        createEnrollmentStatsSheet(enrollmentSheet);
+        
+        // Tạo sheet chi tiết khảo sát
+        Sheet surveySheet = workbook.createSheet("Chi tiết khảo sát");
+        createSurveyStatsSheet(surveySheet);
+        
+        // Xuất workbook sang mảng byte
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        workbook.write(outputStream);
+        return outputStream.toByteArray();
+    } catch (IOException e) {
+        log.error("Lỗi khi tạo báo cáo Excel: {}", e.getMessage());
+        throw new RuntimeException("Không thể tạo báo cáo Excel", e);
+    }
+}
+
+// Helper method để tạo sheet thống kê chính
+private void createMainStatsSheet(Sheet sheet) {
+    // Tạo tiêu đề các cột
+    Row headerRow = sheet.createRow(0);
+    headerRow.createCell(0).setCellValue("Chỉ số");
+    headerRow.createCell(1).setCellValue("Giá trị");
+    
+    // Tạo dữ liệu
+    ManagerDashboardResponse stats = getDashboardStatistics();
+    
+    Row row1 = sheet.createRow(1);
+    row1.createCell(0).setCellValue("Tổng số đăng ký");
+    row1.createCell(1).setCellValue(stats.getTotalEnrollments());
+    
+    // Thêm các dòng khác...
+}
+```
+
+## 5. Quản lý chủ đề (Topics)
+
+### 5.1. Controller
+
+```java
+// ManagerController.java - API endpoint cho quản lý chủ đề
+@GetMapping("/topics")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<List<TopicResponse>> getAllTopics() {
+    List<TopicResponse> topics = topicService.getAllTopics();
+    return ResponseEntity.ok(topics);
+}
+
+@PostMapping("/topics")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<TopicResponse> createTopic(@Valid @RequestBody TopicRequest topic) {
+    TopicResponse topicRes = topicService.create(topic);
+    return ResponseEntity.status(HttpStatus.CREATED).body(topicRes);
+}
+
+@DeleteMapping("/topics/{id}")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Void> deleteTopic(@PathVariable Long id) {
+    topicService.delete(id);
+    return ResponseEntity.noContent().build();
+}
+```
+
+### 5.2. Service và Interface
+
+```java
+// TopicService.java - Interface cho service quản lý chủ đề
+public interface TopicService {
+    List<Topic> getAll();
+    Topic getById(Long id);
+    TopicResponse create(TopicRequest request);
+    TopicResponse update(Long id, TopicRequest request);
+    List<TopicResponse> getAllTopics();
+    List<TopicResponse> getTopicsCreatedByCurrentUser();
+    void delete(Long id);
+}
+
+// TopicServiceImpl.java (giả định) - Triển khai của TopicService
+@Service
+@RequiredArgsConstructor
+public class TopicServiceImpl implements TopicService {
+    private final TopicRepository topicRepository;
+    private final UserRepository userRepository;
+    
+    @Override
+    public List<TopicResponse> getAllTopics() {
+        return topicRepository.findAll().stream()
+                .map(this::mapToTopicResponse)
+                .collect(Collectors.toList());
+    }
+    
+    @Override
+    public TopicResponse create(TopicRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        User creator = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        Topic topic = new Topic();
+        topic.setName(request.getName());
+        topic.setDescription(request.getDescription());
+        topic.setCreator(creator);
+        
+        Topic savedTopic = topicRepository.save(topic);
+        return mapToTopicResponse(savedTopic);
+    }
+    
+    // Các phương thức khác...
+}
+```
+
+### 5.3. Entity và DTO
+
+```java
+// Topic.java - Entity chủ đề
+@Entity
+@Data
+public class Topic {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+    private String description;
+    
+    @ManyToOne
+    @JoinColumn(name = "creator_id")
+    private User creator;
+    
+    // Các trường khác...
+}
+
+// TopicRequest.java - DTO cho request tạo/cập nhật chủ đề
+@Data
+public class TopicRequest {
+    @NotBlank(message = "Name is required")
+    private String name;
+    private String description;
+}
+
+// TopicResponse.java - DTO cho response chủ đề
+@Data
+@Builder
+public class TopicResponse {
+    private Long id;
+    private String name;
+    private String description;
+    private String creatorName;
+    private LocalDateTime createdAt;
+}
+```
+
+## 6. Quản lý khảo sát (Surveys)
+
+### 6.1. Controller
+
+```java
+// ManagerController.java - API endpoint cho quản lý khảo sát
+@GetMapping("/surveys")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<List<SurveyResponse>> getAllSurveys() {
+    List<SurveyResponse> surveys = surveyService.getSurveySummary()
+            .stream()
+            .map(summary -> {
+                SurveyResponse response = new SurveyResponse();
+                response.setId(summary.getSurveyId());
+                response.setTitle(summary.getSurveyTitle());
+                return response;
+            })
+            .collect(Collectors.toList());
+    return ResponseEntity.ok(surveys);
+}
+
+@PostMapping(value = "/surveys", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<SurveyResponse> createSurvey(@Valid @ModelAttribute SurveyCreateRequest request) throws IOException {
+    SurveyResponse surveyResponse = surveyService.createSurvey(request);
+    return ResponseEntity.status(HttpStatus.CREATED).body(surveyResponse);
+}
+```
+
+### 6.2. Service
+
+```java
+// SurveyServiceImpl.java - Một phần của service xử lý khảo sát
+@Override
+public SurveyResponse createSurvey(SurveyCreateRequest request) throws IOException {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    String username = authentication.getName();
+
+    User author = userRepository.findByUsername(username)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    Survey survey = new Survey();
+    survey.setTitle(request.getTitle());
+    survey.setDescription(request.getDescription());
+    survey.setCreatedBy(author);
+    survey.setActive(true);
+    survey.setCreatedAt(LocalDateTime.now());
+
+    if (request.getImageCover() != null && !request.getImageCover().isEmpty()) {
+        String imageUrl = cloudinaryService.uploadFile(request.getImageCover());
+        survey.setSurveyImage(imageUrl);
+    }
+    
+    // Xử lý các section, question, option và condition
+    // Code đã bị cắt ngắn để đơn giản
+    
+    Survey savedSurvey = surveyRepository.save(survey);
+    return SurveyResponse.builder()
+            .title(savedSurvey.getTitle())
+            .sections(savedSurvey.getSections().stream()
+                    .map(SurveyResponse.SurveySectionDTO::fromEntity)
+                    .collect(Collectors.toList()))
+            .conditions(savedSurvey.getConditions().stream()
+                    .map(SurveyResponse.SurveyConditionDTO::fromEntity)
+                    .collect(Collectors.toList()))
+            .build();
+}
+```
+
+### 6.3. Entity và DTO
+
+```java
+// Survey.java - Entity khảo sát
+@Entity
+@Data
+public class Survey {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String title;
+    private String description;
+    private LocalDateTime createdAt;
+    private boolean active;
+    private String surveyImage;
+    
+    @ManyToOne
+    @JoinColumn(name = "created_by_id", nullable = false)
+    private User createdBy;
+    
+    @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<SurveySection> sections = new ArrayList<>();
+    
+    @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL)
+    private Set<SurveyResult> surveyResults = new HashSet<>();
+    
+    @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<SurveyCondition> conditions = new ArrayList<>();
+}
+
+// SurveyResponse.java - DTO cho response khảo sát
+@Data
+@Builder
+public class SurveyResponse {
+    private Long id;
+    private String title;
+    private List<SurveySectionDTO> sections;
+    private List<SurveyConditionDTO> conditions;
+    
+    // Các lớp inner class cho các thành phần của survey
+    // Code đã bị cắt ngắn để đơn giản
+}
+```
+
+## 7. Quản lý nhân sự
+
+### 7.1. Controller
+
+```java
+// ManagerController.java - API endpoint cho quản lý nhân sự
+@GetMapping("/staff")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public List<UserDetailResponse> getAllStaff() {
+    return adminService.getUsersByRole("ROLE_STAFF");
+}
+
+@GetMapping("/consultants")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public List<UserDetailResponse> getAllConsultants() {
+    return adminService.getUsersByRole("ROLE_CONSULTANT");
+}
+```
+
+### 7.2. Service
+
+```java
+// AdminService.java (giả định) - Service xử lý quản trị
+public interface AdminService {
+    List<UserDetailResponse> getUsersByRole(String role);
+    // Các phương thức khác...
+}
+
+// AdminServiceImpl.java (giả định) - Triển khai của AdminService
+@Service
+@RequiredArgsConstructor
+public class AdminServiceImpl implements AdminService {
+    private final UserRepository userRepository;
+    
+    @Override
+    public List<UserDetailResponse> getUsersByRole(String role) {
+        ERole eRole = ERole.valueOf(role);
+        List<User> users = userRepository.findByRole(eRole);
+        
+        return users.stream()
+                .map(this::mapToUserDetailResponse)
+                .collect(Collectors.toList());
+    }
+    
+    private UserDetailResponse mapToUserDetailResponse(User user) {
+        return UserDetailResponse.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .fullname(user.getFullname())
+                .role(user.getRole().name())
+                .enabled(user.isEnabled())
+                .createdAt(user.getCreatedAt())
+                .build();
+    }
+}
+```
+
+## 8. Luồng xử lý và tương tác giữa các thành phần
+
+### 8.1. Luồng xử lý Dashboard
+
+1. Frontend gửi request đến `/api/manager/dashboard`
+2. ManagerController xác thực quyền và gọi `managerService.getDashboardStatistics()`
+3. ManagerServiceImpl thu thập dữ liệu từ các repository (enrollmentRepository, blogRepository, surveyResultRepository)
+4. ManagerServiceImpl tính toán các thống kê (countCompletedEnrollments(), getSurveyCompletionRate(), countPendingReviews()...)
+5. ManagerServiceImpl đóng gói dữ liệu trong ManagerDashboardResponse và trả về
+6. ManagerController chuyển đổi ManagerDashboardResponse thành JSON response
+7. Frontend hiển thị dữ liệu thống kê trên dashboard
+
+### 8.2. Luồng xử lý phê duyệt Blog
+
+1. Staff tạo blog mới (status = PENDING) qua BlogController
+2. Manager truy cập `/api/manager/content-review/blogs` để xem danh sách blogs chờ phê duyệt
+3. ManagerController xác thực quyền và gọi `managerService.getPendingBlogs()`
+4. ManagerServiceImpl gọi `blogRepository.findByStatus(ApprovalStatus.PENDING)` để lấy danh sách blogs
+5. ManagerServiceImpl chuyển đổi các Blog entity thành BlogResponse và trả về
+6. Manager chọn blog để phê duyệt và gửi request đến `/api/manager/content-review/blogs/{blogId}?status=APPROVED`
+7. ManagerController xác thực quyền và gọi `managerService.updateBlogApprovalStatus(blogId, status)`
+8. ManagerServiceImpl cập nhật trạng thái blog và lưu vào database
+9. Blog đã được phê duyệt sẽ hiển thị công khai trên hệ thống
+
+### 8.3. Luồng xử lý xuất báo cáo
+
+1. Manager truy cập `/api/manager/reports/statistics` để xuất báo cáo
+2. ManagerController xác thực quyền và gọi `managerService.generateStatisticsReport()`
+3. ManagerServiceImpl tạo Workbook Excel với 3 sheet (thống kê tổng quan, chi tiết đăng ký, chi tiết khảo sát)
+4. ManagerServiceImpl gọi các helper method (createMainStatsSheet(), createEnrollmentStatsSheet(), createSurveyStatsSheet()) để tạo nội dung
+5. ManagerServiceImpl chuyển đổi Workbook thành mảng byte và trả về
+6. ManagerController đóng gói mảng byte trong ByteArrayResource và thiết lập HTTP header để tải file
+7. Manager tải xuống file báo cáo Excel
+
+## 9. Sơ đồ lớp và mối quan hệ
+
+```
+ManagerController --> ManagerService --> Repository (CourseEnrollmentRepository, BlogRepository, SurveyResultRepository...)
+                   --> TopicService   --> TopicRepository
+                   --> SurveyService  --> SurveyRepo
+                   --> AdminService   --> UserRepository
+
+Entity: Blog, Survey, Topic, CourseEnrollment, User...
+
+DTO: ManagerDashboardResponse, BlogResponse, SurveyResponse, TopicResponse...
+```
+
+## 10. Bảo mật và kiểm soát truy cập
+
+```java
+// SecurityConfig.java (giả định) - Cấu hình bảo mật
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(authz -> authz
+                .requestMatchers("/api/manager/**").hasAnyAuthority("ROLE_MANAGER", "ROLE_ADMIN")
+                .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+                // Các cấu hình khác...
+            )
+            // Cấu hình JWT, OAuth2...
+        
+        return http.build();
+    }
+    
+    // Các bean khác...
+}
+```
+
+Đây là phân tích chi tiết luồng chức năng của Manager kèm theo các đoạn code minh họa chính. Mỗi chức năng được tổ chức theo mô hình phân lớp rõ ràng với Controller, Service, Repository và các DTO/Entity tương ứng, tạo nên một hệ thống module hóa, dễ bảo trì và mở rộng.
