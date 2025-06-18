@@ -1,207 +1,123 @@
-# Phân tích luồng đầy đủ chức năng của Manager
+# Phân tích luồng chức năng quản lý dành cho Manager
 
-## 1. Tổng quan hệ thống
+## 1. Tổng quan Dashboard
 
-Manager là vai trò quản lý trong hệ thống, nằm giữa Admin (quyền cao nhất) và các vai trò khác như Staff, Consultant và Member. Manager có nhiệm vụ chính là giám sát hoạt động, phê duyệt nội dung và theo dõi các chỉ số hiệu suất của hệ thống.
+**Luồng xử lý:**
+1. Client gửi request GET đến `/api/manager/dashboard`
+2. `ManagerController` xác thực quyền truy cập (ROLE_MANAGER/ROLE_ADMIN)
+3. `ManagerController` gọi `enrollmentService.getDashboardStats()`
+4. `CourseEnrollmentService` thực hiện:
+   - Tính tổng số enrollment
+   - Đếm số chứng chỉ đã cấp (enrollment đã completed)
+   - Tính phần trăm người tham gia survey
+   - Đếm số lượng reviews đang chờ phê duyệt (blogs + surveys với status PENDING)
+   - Tính số enrollment trong năm hiện tại
+   - Đếm số người đang học (progress > 0 và chưa completed)
+   - Thống kê theo tháng
+5. Trả về đối tượng `DashboardResponse` chứa tất cả thông tin thống kê
 
-## 2. Luồng chức năng chính của Manager
+## 2. Quản lý phê duyệt Blogs
 
-### 2.1. Quản lý Dashboard (Bảng điều khiển)
+**Luồng xem danh sách blog chờ phê duyệt:**
+1. Client gửi request GET đến `/api/manager/blogs/pending`
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `blogService.getBlogsByStatus(ApprovalStatus.PENDING)`
+4. `BlogServiceImpl` thực hiện:
+   - Gọi `blogRepository.findByStatus(ApprovalStatus.PENDING)`
+   - Chuyển đổi danh sách Blog thành danh sách BlogResponse
+5. Trả về danh sách BlogResponse
 
-**Luồng xử lý**:
-1. Manager đăng nhập vào hệ thống
-2. Hệ thống xác thực quyền (ROLE_MANAGER)
-3. Manager truy cập vào dashboard
-4. Hệ thống hiển thị các thông tin thống kê:
-   - Tổng số lượng enrollment
-   - Số chứng chỉ đã cấp
-   - Phần trăm người dùng đã làm survey
-   - Số lượng nội dung đang chờ phê duyệt (blogs + surveys)
-   - Số lượng enrollment trong năm hiện tại
-   - Số lượng người đang học (in progress)
-5. Manager có thể xem thêm các biểu đồ thống kê theo tháng
+**Luồng phê duyệt/từ chối blog:**
+1. Client gửi request PATCH đến `/api/manager/blogs/{id}/approval` với body chứa ApprovalRequest
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `blogService.updateBlogStatus(id, request.getStatus(), request.getComment())`
+4. `BlogServiceImpl` thực hiện:
+   - Tìm blog theo id
+   - Kiểm tra quyền người dùng
+   - Cập nhật trạng thái blog (APPROVED/REJECTED)
+   - Lưu vào database
+5. Trả về BlogResponse với trạng thái đã cập nhật
 
-**API liên quan**:
-- `GET /api/manager/dashboard`: Lấy tất cả thống kê tổng quan
-- `GET /api/manager/dashboard/enrollments-by-month`: Thống kê đăng ký theo tháng
-- `GET /api/manager/dashboard/certificates-by-month`: Thống kê chứng chỉ theo tháng
+## 3. Quản lý phê duyệt Surveys
 
-**Xử lý backend**:
-- `ManagerService.getDashboardStatistics()`: Tổng hợp dữ liệu từ nhiều nguồn
-- `ManagerService.getEnrollmentsByMonth()`: Phân tích dữ liệu enrollment theo tháng
-- `ManagerService.getCertificatesByMonth()`: Phân tích dữ liệu certificate theo tháng
+**Luồng xem danh sách survey chờ phê duyệt:**
+1. Client gửi request GET đến `/api/manager/surveys/pending`
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `surveyService.getSurveysByStatus(ApprovalStatus.PENDING)`
+4. `SurveyServiceImpl` thực hiện:
+   - Gọi `surveyRepository.findByStatus(ApprovalStatus.PENDING)`
+   - Chuyển đổi danh sách Survey thành danh sách SurveyResponse
+5. Trả về danh sách SurveyResponse
 
-### 2.2. Quản lý phê duyệt nội dung (Content Review)
+**Luồng phê duyệt/từ chối survey:**
+1. Client gửi request PATCH đến `/api/manager/surveys/{id}/approval` với body chứa ApprovalRequest
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `surveyService.updateSurveyStatus(id, request.getStatus(), request.getComment())`
+4. `SurveyServiceImpl` thực hiện:
+   - Tìm survey theo id
+   - Kiểm tra quyền người dùng
+   - Cập nhật trạng thái survey (APPROVED/REJECTED)
+   - Nếu từ chối (REJECTED), set active = false
+   - Lưu vào database
+5. Trả về SurveyResponse với trạng thái đã cập nhật
 
-**Luồng xử lý cho Blog**:
-1. Staff hoặc Consultant tạo blog mới (trạng thái PENDING)
-2. Manager truy cập danh sách blogs đang chờ phê duyệt
-3. Manager xem chi tiết từng blog
-4. Manager quyết định phê duyệt (APPROVED) hoặc từ chối (REJECTED)
-5. Hệ thống cập nhật trạng thái blog
-6. Nếu được phê duyệt, blog sẽ được hiển thị công khai
+## 4. Quản lý Topics
 
-**Luồng xử lý cho Survey**:
-1. Staff hoặc Consultant tạo survey mới (trạng thái PENDING)
-2. Manager truy cập danh sách surveys đang chờ phê duyệt
-3. Manager xem chi tiết từng survey
-4. Manager quyết định phê duyệt (APPROVED) hoặc từ chối (REJECTED)
-5. Hệ thống cập nhật trạng thái survey
-6. Nếu được phê duyệt, survey sẽ được hiển thị cho người dùng
+**Luồng xem tất cả topics:**
+1. Client gửi request GET đến `/api/manager/topics`
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `topicService.getAllTopics()`
+4. Trả về danh sách TopicResponse
 
-**API liên quan**:
-- `GET /api/manager/content-review/blogs`: Lấy danh sách blogs chờ phê duyệt
-- `PATCH /api/manager/content-review/blogs/{blogId}`: Cập nhật trạng thái blog
-- `GET /api/manager/content-review/surveys`: Lấy danh sách surveys chờ phê duyệt
-- `PATCH /api/manager/content-review/surveys/{surveyId}`: Cập nhật trạng thái survey
+**Luồng tạo mới topic:**
+1. Client gửi request POST đến `/api/manager/topics` với body chứa TopicRequest
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `topicService.create(topic)`
+4. Trả về TopicResponse của topic mới tạo
 
-**Xử lý backend**:
-- `ManagerService.getPendingBlogs()`: Lấy danh sách blogs đang chờ phê duyệt
-- `ManagerService.updateBlogApprovalStatus()`: Cập nhật trạng thái phê duyệt blog
-- `ManagerService.getPendingSurveys()`: Lấy danh sách surveys đang chờ phê duyệt
-- `ManagerService.updateSurveyApprovalStatus()`: Cập nhật trạng thái phê duyệt survey
+**Luồng cập nhật topic:**
+1. Client gửi request PATCH đến `/api/manager/topics/{id}` với body chứa TopicRequest
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `topicService.update(id, topic)`
+4. Trả về TopicResponse đã cập nhật
 
-### 2.3. Quản lý báo cáo (Reports)
+**Luồng xóa topic:**
+1. Client gửi request DELETE đến `/api/manager/topics/{id}`
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `topicService.delete(id)`
+4. Trả về HTTP 204 No Content
 
-**Luồng xử lý**:
-1. Manager truy cập chức năng xuất báo cáo
-2. Hệ thống tạo file báo cáo Excel với các sheet:
-   - Sheet thống kê tổng quan (tổng số đăng ký, chứng chỉ, tỷ lệ hoàn thành survey...)
-   - Sheet chi tiết đăng ký (phân tích theo tháng)
-   - Sheet chi tiết khảo sát (tỷ lệ hoàn thành, số người tham gia...)
-3. Manager tải xuống file báo cáo Excel
+## 5. Báo cáo chi tiết
 
-**API liên quan**:
-- `GET /api/manager/reports/statistics`: Xuất báo cáo thống kê Excel
+**Luồng báo cáo enrollment:**
+1. Client gửi request GET đến `/api/manager/reports/enrollments`
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `enrollmentService.generateEnrollmentReport()`
+4. `CourseEnrollmentService` thực hiện:
+   - Tổng hợp số liệu về enrollment
+   - Tìm khóa học phổ biến nhất
+   - Tính tỷ lệ hoàn thành
+   - Tính thời gian hoàn thành trung bình
+5. Trả về Map<String, Object> chứa báo cáo
 
-**Xử lý backend**:
-- `ManagerService.generateStatisticsReport()`: Tạo báo cáo Excel từ dữ liệu thống kê
-- `createMainStatsSheet()`, `createEnrollmentStatsSheet()`, `createSurveyStatsSheet()`: Tạo các sheet báo cáo
+**Luồng báo cáo survey:**
+1. Client gửi request GET đến `/api/manager/reports/surveys`
+2. `ManagerController` xác thực quyền truy cập
+3. `ManagerController` gọi `surveyService.generateSurveyReport()`
+4. `SurveyServiceImpl` thực hiện:
+   - Tổng hợp số liệu về survey
+   - Tính tỷ lệ phê duyệt
+   - Thống kê số người tham gia
+   - Thống kê số survey tạo mới trong năm
+5. Trả về Map<String, Object> chứa báo cáo
 
-### 2.4. Quản lý chủ đề (Topics)
+## Cơ chế phân quyền:
 
-**Luồng xử lý**:
-1. Manager truy cập danh sách chủ đề
-2. Manager có thể:
-   - Xem tất cả chủ đề
-   - Xem chủ đề do mình tạo
-   - Tạo chủ đề mới
-   - Cập nhật chủ đề hiện có
-   - Xóa chủ đề
+Tất cả các endpoint của Manager đều được bảo vệ bằng annotation `@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")`, đảm bảo chỉ người dùng có vai trò MANAGER hoặc ADMIN mới có thể truy cập.
 
-**API liên quan**:
-- `GET /api/manager/topics`: Lấy danh sách tất cả chủ đề
-- `GET /api/manager/topics/me`: Lấy danh sách chủ đề do Manager tạo
-- `GET /api/manager/topics/{id}`: Lấy chi tiết một chủ đề
-- `POST /api/manager/topics`: Tạo chủ đề mới
-- `PATCH /api/manager/topics/{id}`: Cập nhật chủ đề
-- `DELETE /api/manager/topics/{id}`: Xóa chủ đề
-
-**Xử lý backend**:
-- `TopicService.getAllTopics()`: Lấy tất cả chủ đề
-- `TopicService.getTopicsCreatedByCurrentUser()`: Lấy chủ đề do người dùng hiện tại tạo
-- `TopicService.getById()`: Lấy thông tin chi tiết chủ đề
-- `TopicService.create()`: Tạo chủ đề mới
-- `TopicService.update()`: Cập nhật thông tin chủ đề
-- `TopicService.delete()`: Xóa chủ đề
-
-### 2.5. Quản lý khảo sát (Surveys)
-
-**Luồng xử lý**:
-1. Manager truy cập danh sách khảo sát
-2. Manager có thể:
-   - Xem tất cả khảo sát
-   - Xem chi tiết một khảo sát
-   - Tạo khảo sát mới
-   - Xóa khảo sát
-
-**API liên quan**:
-- `GET /api/manager/surveys`: Lấy danh sách tất cả khảo sát
-- `GET /api/manager/surveys/{id}`: Lấy chi tiết một khảo sát
-- `POST /api/manager/surveys`: Tạo khảo sát mới
-- `DELETE /api/manager/surveys/{id}`: Xóa khảo sát
-
-**Xử lý backend**:
-- `SurveyService.getSurveySummary()`: Lấy tóm tắt tất cả khảo sát
-- `SurveyService.getSurveyDetails()`: Lấy thông tin chi tiết khảo sát
-- `SurveyService.createSurvey()`: Tạo khảo sát mới
-
-### 2.6. Quản lý nhân sự
-
-**Luồng xử lý**:
-1. Manager truy cập danh sách nhân viên hoặc tư vấn viên
-2. Hệ thống hiển thị danh sách người dùng với vai trò tương ứng
-3. Manager xem thông tin chi tiết của từng người dùng
-
-**API liên quan**:
-- `GET /api/manager/staff`: Lấy danh sách nhân viên
-- `GET /api/manager/consultants`: Lấy danh sách tư vấn viên
-
-**Xử lý backend**:
-- `AdminService.getUsersByRole()`: Lấy danh sách người dùng theo vai trò
-
-## 3. Tương tác giữa các thành phần
-
-### 3.1. Luồng dữ liệu
-
-1. **Frontend** (React/Angular/Vue) gửi request đến **API Endpoint** trong ManagerController
-2. **ManagerController** xác thực quyền (ROLE_MANAGER) và chuyển yêu cầu đến **ManagerService**
-3. **ManagerService** xử lý yêu cầu, tương tác với các **Repository** (CourseEnrollmentRepository, BlogRepository, SurveyResultRepository...) để lấy và xử lý dữ liệu
-4. **Repository** thực hiện truy vấn đến **Database** và trả về kết quả
-5. **ManagerService** xử lý kết quả và trả về cho **ManagerController**
-6. **ManagerController** đóng gói dữ liệu trong **Response** và gửi về **Frontend**
-7. **Frontend** hiển thị dữ liệu cho người dùng
-
-### 3.2. Quy trình phê duyệt nội dung
-
-1. **Staff/Consultant** tạo nội dung (Blog/Survey) với trạng thái PENDING
-2. **Manager** truy cập danh sách nội dung chờ phê duyệt
-3. **Manager** xem chi tiết nội dung và quyết định phê duyệt (APPROVED) hoặc từ chối (REJECTED)
-4. Hệ thống cập nhật trạng thái nội dung
-5. Nếu được phê duyệt, nội dung sẽ hiển thị công khai và có thể được truy cập bởi người dùng
-
-## 4. Mô hình dữ liệu liên quan
-
-### 4.1. Entity chính
-
-- **Blog**: Lưu trữ thông tin bài viết, có trường status (PENDING, APPROVED, REJECTED)
-- **Survey**: Lưu trữ thông tin khảo sát (cần bổ sung trường status)
-- **Topic**: Lưu trữ thông tin chủ đề
-- **CourseEnrollment**: Lưu trữ thông tin đăng ký khóa học
-- **User**: Lưu trữ thông tin người dùng với các vai trò (ROLE_MANAGER, ROLE_STAFF, ROLE_CONSULTANT, ROLE_MEMBER)
-
-### 4.2. DTO sử dụng
-
-- **ManagerDashboardResponse**: Chứa thông tin thống kê cho bảng điều khiển
-- **BlogResponse**: Chứa thông tin blog
-- **SurveyResponse**: Chứa thông tin khảo sát
-- **TopicResponse**: Chứa thông tin chủ đề
-
-## 5. Bảo mật và kiểm soát truy cập
-
-- Tất cả API đều được bảo vệ bằng annotation `@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")`
-- Việc kiểm tra quyền được thực hiện ở tầng Controller
-- Dữ liệu nhạy cảm được xác thực và kiểm tra trước khi xử lý
-
-## 6. Ưu điểm của thiết kế hiện tại
-
-1. **Phân tách trách nhiệm rõ ràng**:
-   - Controller: Xử lý request/response API
-   - Service: Xử lý logic nghiệp vụ
-   - Repository: Truy vấn dữ liệu
-
-2. **Kiểm soát quyền chặt chẽ**: Chỉ Manager và Admin mới có thể truy cập các chức năng quản lý
-
-3. **Thiết kế module hóa**: Mỗi chức năng được tổ chức thành các module riêng biệt
-
-4. **Dễ mở rộng**: Có thể dễ dàng thêm chức năng mới cho Manager
-
-5. **Hỗ trợ xuất báo cáo**: Khả năng xuất báo cáo chi tiết dạng Excel
-
-## 7. Một số cải tiến có thể thực hiện
-
-1. Thêm trường status cho Survey để quản lý trạng thái phê duyệt
-2. Cải thiện việc phân trang cho các danh sách lớn
-3. Thêm tìm kiếm và lọc trong các danh sách
-4. Thêm thông báo cho Staff/Consultant khi nội dung được phê duyệt hoặc từ chối
-5. Thêm lịch sử hoạt động để theo dõi các thay đổi của Manager
+Bên cạnh đó, trong các Service còn có kiểm tra quyền bổ sung khi thực hiện các thao tác nhạy cảm như cập nhật trạng thái phê duyệt:
+```java
+if (currentUser.getRole() != ERole.ROLE_MANAGER && currentUser.getRole() != ERole.ROLE_ADMIN) {
+    throw new AccessDeniedException("Chỉ MANAGER và ADMIN mới có thể cập nhật trạng thái");
+}
+```
