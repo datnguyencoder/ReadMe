@@ -1,0 +1,544 @@
+# Giải thích chi tiết hệ thống DUPSS-SWP391 cho người mới bắt đầu
+
+## 1. Tổng quan hệ thống
+
+Hệ thống DUPSS là một ứng dụng web được xây dựng bằng Java Spring Boot, phục vụ cho việc quản lý tư vấn, khóa học, blog và khảo sát. Hệ thống có nhiều vai trò người dùng khác nhau như Admin, Manager, Consultant, Staff và Member (người dùng thông thường).
+
+### 1.1. Công nghệ sử dụng
+
+- **Spring Boot**: Framework Java giúp xây dựng ứng dụng nhanh chóng
+- **Spring Security**: Quản lý bảo mật và phân quyền
+- **Spring Data JPA**: Tương tác với cơ sở dữ liệu
+- **JWT (JSON Web Token)**: Xác thực người dùng không lưu trạng thái
+- **MySQL**: Cơ sở dữ liệu quan hệ
+- **Thymeleaf**: Tạo mẫu email
+- **Cloudinary**: Lưu trữ hình ảnh trên cloud
+
+## 2. Cấu trúc hệ thống
+
+Hệ thống được chia thành nhiều lớp theo mô hình MVC (Model-View-Controller) mở rộng:
+
+### 2.1. Lớp Controller
+
+Controller là nơi tiếp nhận các yêu cầu HTTP từ người dùng. Ví dụ:
+
+```java
+@RestController
+@RequestMapping("/api/auth")
+public class AuthenticationController {
+    
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
+        // Xử lý đăng nhập
+    }
+    
+    @PostMapping("/register")
+    public ResponseEntity<RegisterResponse> register(@RequestBody RegisterRequest request) {
+        // Xử lý đăng ký
+    }
+}
+```
+
+Giải thích:
+- `@RestController`: Đánh dấu đây là một controller REST API
+- `@RequestMapping("/api/auth")`: Tất cả các endpoint trong controller này đều bắt đầu bằng "/api/auth"
+- `@PostMapping("/login")`: Xử lý yêu cầu POST đến "/api/auth/login"
+- `ResponseEntity<>`: Đóng gói kết quả trả về, bao gồm dữ liệu và mã trạng thái HTTP
+
+### 2.2. Lớp Service
+
+Service chứa logic nghiệp vụ của ứng dụng. Ví dụ:
+
+```java
+@Service
+public class AuthenticationService {
+    
+    public LoginResponse login(LoginRequest request) {
+        // Kiểm tra thông tin đăng nhập
+        // Tạo token JWT
+        // Trả về thông tin đăng nhập
+    }
+    
+    public RegisterResponse register(RegisterRequest request) {
+        // Kiểm tra username/email đã tồn tại chưa
+        // Mã hóa mật khẩu
+        // Lưu người dùng mới
+        // Gửi email chào mừng
+    }
+}
+```
+
+Giải thích:
+- `@Service`: Đánh dấu đây là một service
+- Service gọi các repository để tương tác với database
+- Service thực hiện các kiểm tra, xác thực và xử lý logic
+
+### 2.3. Lớp Repository
+
+Repository giúp tương tác với cơ sở dữ liệu. Ví dụ:
+
+```java
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByUsername(String username);
+    Optional<User> findByEmail(String email);
+    boolean existsByUsername(String username);
+    boolean existsByEmail(String email);
+}
+```
+
+Giải thích:
+- `@Repository`: Đánh dấu đây là một repository
+- `JpaRepository<User, Long>`: Kế thừa từ JpaRepository, với entity là User và kiểu dữ liệu khóa chính là Long
+- Spring Data JPA tự động tạo các phương thức tìm kiếm dựa trên tên phương thức
+
+### 2.4. Lớp Entity
+
+Entity đại diện cho các bảng trong cơ sở dữ liệu. Ví dụ:
+
+```java
+@Entity
+@Data
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(unique = true)
+    private String username;
+    
+    @Column(unique = true)
+    private String email;
+    
+    private String password;
+    
+    @Enumerated(EnumType.STRING)
+    private ERole role;
+}
+```
+
+Giải thích:
+- `@Entity`: Đánh dấu đây là một entity JPA
+- `@Data`: Annotation của Lombok, tự động tạo getter, setter, equals, hashCode và toString
+- `@Id`: Đánh dấu đây là khóa chính
+- `@GeneratedValue`: Tự động tạo giá trị khi thêm mới
+- `@Column(unique = true)`: Cột trong database với ràng buộc unique
+- `@Enumerated`: Lưu trữ enum dưới dạng string trong database
+
+## 3. Các chức năng chính
+
+### 3.1. Đăng nhập và xác thực
+
+#### 3.1.1. Quy trình đăng nhập
+
+1. Người dùng gửi username và password
+2. Hệ thống kiểm tra thông tin đăng nhập
+3. Nếu đúng, tạo JWT token
+4. Trả về access token và refresh token
+
+```java
+// Người dùng gửi request
+{
+    "username": "user123",
+    "password": "password123"
+}
+
+// Hệ thống trả về
+{
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "username": "user123",
+    "email": "user@example.com",
+    "role": "ROLE_MEMBER"
+}
+```
+
+#### 3.1.2. JWT Token
+
+JWT (JSON Web Token) là một chuỗi mã hóa gồm 3 phần:
+- **Header**: Chứa thuật toán mã hóa
+- **Payload**: Chứa thông tin người dùng (username, role...)
+- **Signature**: Chữ ký để xác thực token
+
+```java
+// Tạo JWT token
+public String generateAccessToken(User user) {
+    return Jwts.builder()
+            .setSubject(user.getUsername())
+            .claim("roles", user.getRole().name())
+            .setIssuedAt(new Date())
+            .setExpiration(new Date(System.currentTimeMillis() + jwtAccessExpiration))
+            .signWith(getSignKey(), SignatureAlgorithm.HS256)
+            .compact();
+}
+```
+
+#### 3.1.3. Phân quyền
+
+Hệ thống sử dụng Spring Security để phân quyền:
+
+```java
+http.authorizeHttpRequests(auth -> auth
+    .requestMatchers("/api/auth/**", "/api/home/**").permitAll()
+    .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+    .requestMatchers("/api/manager/**").hasAnyAuthority("ROLE_MANAGER", "ROLE_ADMIN")
+    .requestMatchers("/api/consultant/**").hasAnyAuthority("ROLE_CONSULTANT", "ROLE_ADMIN")
+    .anyRequest().authenticated()
+)
+```
+
+Giải thích:
+- `/api/auth/**`: Ai cũng có thể truy cập (đăng nhập, đăng ký)
+- `/api/admin/**`: Chỉ ADMIN mới truy cập được
+- `/api/manager/**`: MANAGER và ADMIN truy cập được
+- Các URL khác: Phải đăng nhập mới truy cập được
+
+### 3.2. Quên mật khẩu
+
+#### 3.2.1. Quy trình đặt lại mật khẩu
+
+1. Người dùng gửi email
+2. Hệ thống tạo mã OTP và gửi qua email
+3. Người dùng nhập OTP và mật khẩu mới
+4. Hệ thống kiểm tra OTP và cập nhật mật khẩu
+
+```java
+// Bước 1: Gửi yêu cầu quên mật khẩu
+{
+    "email": "user@example.com"
+}
+
+// Bước 3: Đặt lại mật khẩu
+{
+    "otp": "123456",
+    "newPassword": "newPassword123",
+    "confirmPassword": "newPassword123"
+}
+```
+
+#### 3.2.2. Mã OTP
+
+OTP (One-Time Password) là mã sử dụng một lần:
+- Được tạo ngẫu nhiên
+- Có thời hạn (thường 10-15 phút)
+- Được gửi qua email
+
+```java
+// Tạo mã OTP
+private String generateOTP() {
+    Random random = new Random();
+    StringBuilder otp = new StringBuilder();
+    
+    for (int i = 0; i < OTP_LENGTH; i++) {
+        otp.append(random.nextInt(10));
+    }
+    
+    return otp.toString();
+}
+```
+
+### 3.3. Hệ thống đặt lịch tư vấn
+
+#### 3.3.1. Quản lý slot (khung giờ)
+
+Consultant tạo các slot (khung giờ) mà họ có thể tư vấn:
+
+```java
+// Tạo một slot
+{
+    "startTime": "2023-07-10T10:00:00",
+    "endTime": "2023-07-10T11:00:00"
+}
+
+// Tạo nhiều slot cùng lúc
+{
+    "startDate": "2023-07-10",
+    "endDate": "2023-07-31",
+    "startTime": "10:00:00",
+    "endTime": "11:00:00",
+    "daysOfWeek": ["MONDAY", "WEDNESDAY", "FRIDAY"]
+}
+```
+
+Khi tạo slot, hệ thống kiểm tra:
+- Thời gian không nằm trong quá khứ
+- Thời gian kết thúc sau thời gian bắt đầu
+- Không trùng với slot hiện có
+
+#### 3.3.2. Đặt lịch hẹn
+
+Member có thể đặt lịch hẹn với consultant:
+
+```java
+// Đặt lịch hẹn
+{
+    "slotId": 123,
+    "notes": "Tôi muốn tư vấn về khóa học Java"
+}
+```
+
+Khi đặt lịch, hệ thống:
+- Kiểm tra slot còn trống không
+- Đánh dấu slot là đã đặt
+- Tạo appointment với trạng thái PENDING
+- Gửi email xác nhận cho người dùng
+
+#### 3.3.3. Xác nhận/từ chối lịch hẹn
+
+Consultant có thể xác nhận hoặc từ chối lịch hẹn:
+
+```java
+// Cập nhật trạng thái lịch hẹn
+{
+    "status": "APPROVED"
+}
+```
+
+Khi cập nhật:
+- Nếu APPROVED: Lịch hẹn được xác nhận
+- Nếu REJECTED: Lịch hẹn bị từ chối và slot được đánh dấu là trống lại
+- Gửi email thông báo cho người dùng
+
+### 3.4. Quản lý nội dung (Blog và Survey)
+
+#### 3.4.1. Tạo blog
+
+Staff hoặc Manager có thể tạo blog:
+
+```java
+// Tạo blog (form-data)
+{
+    "title": "Hướng dẫn học Java cho người mới",
+    "description": "Tổng hợp các bước học Java hiệu quả",
+    "content": "Nội dung chi tiết...",
+    "topicId": 1,
+    "tags": "java,programming,beginner",
+    "images": [file1, file2]
+}
+```
+
+Khi tạo blog:
+- Upload hình ảnh lên Cloudinary
+- Lưu blog với trạng thái PENDING
+- Chờ Manager phê duyệt
+
+#### 3.4.2. Phê duyệt nội dung
+
+Manager phê duyệt hoặc từ chối blog/survey:
+
+```java
+// Cập nhật trạng thái blog
+{
+    "status": "APPROVED",
+    "comment": "Nội dung tốt, đã phê duyệt"
+}
+```
+
+Khi phê duyệt:
+- Cập nhật trạng thái (APPROVED/REJECTED)
+- Nếu từ chối survey, đánh dấu là không active
+
+### 3.5. Dashboard cho Manager
+
+Manager có thể xem thống kê tổng quan:
+
+```java
+// Kết quả dashboard
+{
+    "totalEnrollments": 150,
+    "completedCertificates": 75,
+    "surveyParticipationPercentage": 65.3,
+    "pendingReviewsCount": 12,
+    "currentYearEnrollments": 120,
+    "inProgressCount": 45,
+    "monthlyEnrollments": [
+        {"month": "JANUARY", "count": 15},
+        {"month": "FEBRUARY", "count": 20},
+        // ...
+    ],
+    "monthlyCertificates": [
+        {"month": "JANUARY", "count": 8},
+        {"month": "FEBRUARY", "count": 12},
+        // ...
+    ]
+}
+```
+
+Dashboard hiển thị:
+- Tổng số đăng ký khóa học
+- Số chứng chỉ đã cấp
+- Tỷ lệ người dùng làm khảo sát
+- Số nội dung đang chờ duyệt
+- Thống kê theo tháng
+
+## 4. Cách hoạt động của mã nguồn
+
+### 4.1. Luồng xử lý request
+
+1. **Client gửi request**: Gửi HTTP request đến server
+2. **Filter JWT**: Kiểm tra JWT token trong header
+3. **Spring Security**: Kiểm tra quyền truy cập
+4. **Controller**: Nhận request và gọi service
+5. **Service**: Xử lý logic nghiệp vụ
+6. **Repository**: Tương tác với database
+7. **Response**: Trả về kết quả cho client
+
+### 4.2. Mã hóa mật khẩu
+
+Mật khẩu được mã hóa bằng BCrypt:
+
+```java
+// Mã hóa mật khẩu khi đăng ký
+user.setPassword(passwordEncoder.encode(request.getPassword()));
+
+// Kiểm tra mật khẩu khi đăng nhập
+passwordEncoder.matches(rawPassword, encodedPassword)
+```
+
+BCrypt tự động tạo "salt" ngẫu nhiên và kết hợp với mật khẩu, giúp:
+- Mật khẩu giống nhau có mã hóa khác nhau
+- Không thể dễ dàng giải mã ngược
+
+### 4.3. Gửi email
+
+Hệ thống sử dụng JavaMailSender và Thymeleaf để gửi email:
+
+```java
+// Tạo nội dung email từ template
+String emailContent = templateEngine.process("email/appointment-confirmation", context);
+
+// Tạo message
+MimeMessage message = mailSender.createMimeMessage();
+MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+helper.setFrom(fromEmail);
+helper.setTo(toEmail);
+helper.setSubject("Xác nhận lịch hẹn");
+helper.setText(emailContent, true); // true = HTML
+
+// Gửi email
+mailSender.send(message);
+```
+
+Email được gửi trong các trường hợp:
+- Đăng ký tài khoản
+- Quên mật khẩu
+- Đặt lịch hẹn
+- Cập nhật trạng thái lịch hẹn
+
+### 4.4. Upload hình ảnh
+
+Hình ảnh được upload lên Cloudinary:
+
+```java
+// Upload file lên Cloudinary
+public String uploadFile(MultipartFile file) throws IOException {
+    Map<String, String> params = new HashMap<>();
+    params.put("folder", "dupss");
+    
+    Map uploadResult = cloudinary.uploader().upload(file.getBytes(), params);
+    
+    return (String) uploadResult.get("secure_url");
+}
+```
+
+Cloudinary là dịch vụ lưu trữ đám mây:
+- Tự động tối ưu hình ảnh
+- Cung cấp URL để truy cập hình ảnh
+- Hỗ trợ nhiều định dạng
+
+## 5. Các khái niệm quan trọng
+
+### 5.1. DTO (Data Transfer Object)
+
+DTO là đối tượng chuyển dữ liệu giữa client và server:
+
+```java
+// Request DTO
+@Data
+public class LoginRequest {
+    private String username;
+    private String password;
+}
+
+// Response DTO
+@Data
+@Builder
+public class LoginResponse {
+    private String accessToken;
+    private String refreshToken;
+    private String username;
+    private String email;
+    private String role;
+}
+```
+
+DTO giúp:
+- Tách biệt dữ liệu giao diện và dữ liệu trong database
+- Chỉ truyền những thông tin cần thiết
+- Định dạng dữ liệu phù hợp với client
+
+### 5.2. Entity
+
+Entity đại diện cho bảng trong database:
+
+```java
+@Entity
+@Data
+public class Appointment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private User user;
+    
+    @OneToOne
+    @JoinColumn(name = "slot_id")
+    private Slot slot;
+    
+    private String notes;
+    
+    @Enumerated(EnumType.STRING)
+    private ApprovalStatus status;
+}
+```
+
+Entity chứa:
+- Thông tin về bảng và cột
+- Quan hệ giữa các bảng (@ManyToOne, @OneToOne...)
+- Các ràng buộc dữ liệu
+
+### 5.3. Annotations trong Spring
+
+Spring sử dụng nhiều annotation để cấu hình:
+
+- `@RestController`: Đánh dấu class là REST controller
+- `@Service`: Đánh dấu class là service
+- `@Repository`: Đánh dấu class là repository
+- `@Autowired`: Tiêm dependency tự động
+- `@RequestMapping`: Định nghĩa đường dẫn API
+- `@Transactional`: Đảm bảo tính toàn vẹn của transaction
+- `@PreAuthorize`: Kiểm tra quyền trước khi thực hiện phương thức
+
+### 5.4. Lombok
+
+Lombok là thư viện giúp giảm code trùng lặp:
+
+- `@Data`: Tạo getter, setter, equals, hashCode, toString
+- `@Builder`: Tạo builder pattern
+- `@NoArgsConstructor`: Tạo constructor không tham số
+- `@AllArgsConstructor`: Tạo constructor với tất cả tham số
+- `@RequiredArgsConstructor`: Tạo constructor với các trường final
+
+## 6. Tổng kết
+
+Hệ thống DUPSS-SWP391 là một ứng dụng web đầy đủ chức năng:
+- Quản lý người dùng và xác thực
+- Đặt lịch tư vấn
+- Quản lý khóa học
+- Quản lý nội dung (blog, survey)
+- Dashboard thống kê
+
+Hệ thống được xây dựng theo kiến trúc phân lớp rõ ràng, sử dụng các công nghệ hiện đại như Spring Boot, JWT, JPA và được triển khai theo các nguyên tắc lập trình tốt nhất.
