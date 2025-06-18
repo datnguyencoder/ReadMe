@@ -1,0 +1,725 @@
+# Phân tích toàn diện hệ thống DUPSS - SWP391
+
+Để có cái nhìn tổng thể về hệ thống, tôi sẽ phân tích từng chức năng chính kèm code và giải thích chi tiết.
+
+## 1. Hệ thống xác thực (Authentication)
+
+### 1.1. Đăng nhập (Login)
+
+**Controller:**
+```java
+@PostMapping("/login")
+public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+    return ResponseEntity.ok(authenticationService.login(request));
+}
+```
+
+**Service:**
+```java
+@Override
+public LoginResponse login(LoginRequest request) {
+    try {
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword()));
+
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        
+        User user = (User) authentication.getPrincipal();
+        String accessToken = jwtService.generateAccessToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
+        
+        return LoginResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .role(user.getRole().name())
+                .build();
+    } catch (AuthenticationException e) {
+        throw new RuntimeException("Invalid username or password");
+    }
+}
+```
+
+**Phân tích:**
+1. **Xác thực hai lớp**: 
+   - `authenticationManager.authenticate()` xác thực username/password
+   - Nếu thất bại, ném AuthenticationException
+2. **JWT Token**:
+   - Tạo accessToken (thời gian ngắn) và refreshToken (thời gian dài)
+   - accessToken dùng để xác thực request
+   - refreshToken dùng để lấy accessToken mới khi hết hạn
+3. **SecurityContextHolder**:
+   - Lưu trữ thông tin xác thực trong thread hiện tại
+   - Các phương thức khác có thể truy cập để kiểm tra quyền
+
+### 1.2. Đăng ký (Register)
+
+**Controller:**
+```java
+@PostMapping("/register")
+public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
+    return ResponseEntity.status(HttpStatus.CREATED).body(authenticationService.register(request));
+}
+```
+
+**Service:**
+```java
+@Override
+public RegisterResponse register(RegisterRequest request) {
+    // Check if username or email already exists
+    if (userRepository.existsByUsername(request.getUsername())) {
+        throw new RuntimeException("Username already exists");
+    }
+    if (userRepository.existsByEmail(request.getEmail())) {
+        throw new RuntimeException("Email already exists");
+    }
+    
+    // Create new user entity
+    User user = new User();
+    user.setUsername(request.getUsername());
+    user.setEmail(request.getEmail());
+    user.setPassword(passwordEncoder.encode(request.getPassword()));
+    user.setFullname(request.getFullName());
+    user.setRole(ERole.ROLE_MEMBER); // Default role
+    
+    User savedUser = userRepository.save(user);
+    
+    // Send welcome email
+    emailService.sendWelcomeEmail(savedUser);
+    
+    return RegisterResponse.builder()
+            .message("User registered successfully")
+            .username(savedUser.getUsername())
+            .email(savedUser.getEmail())
+            .build();
+}
+```
+
+**Phân tích:**
+1. **Kiểm tra trùng lặp**:
+   - Kiểm tra username và email đã tồn tại chưa
+   - Ném exception nếu đã tồn tại
+2. **Mã hóa mật khẩu**:
+   - Sử dụng `passwordEncoder.encode()` để mã hóa mật khẩu
+   - Không lưu mật khẩu dạng plain text
+3. **Vai trò mặc định**:
+   - Gán vai trò ROLE_MEMBER cho người dùng mới
+4. **Email chào mừng**:
+   - Gửi email chào mừng sau khi đăng ký thành công
+
+### 1.3. Quên mật khẩu (Forgot Password)
+
+**Controller:**
+```java
+@PostMapping("/forgot-password")
+public ResponseEntity<ForgotPasswordResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+    return ResponseEntity.ok(passwordResetService.processForgotPassword(request));
+}
+
+@PostMapping("/reset-password")
+public ResponseEntity<ResetPasswordResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    return ResponseEntity.ok(passwordResetService.resetPassword(request));
+}
+```
+
+**Service:**
+```java
+@Override
+public ForgotPasswordResponse processForgotPassword(ForgotPasswordRequest request) {
+    User user = userRepository.findByEmail(request.getEmail())
+            .orElseThrow(() -> new RuntimeException("User not found with email: " + request.getEmail()));
+    
+    // Generate OTP
+    String otp = generateOTP();
+    
+    // Save OTP to database with expiry time
+    PasswordResetOtp resetOtp = new PasswordResetOtp();
+    resetOtp.setUser(user);
+    resetOtp.setOtp(otp);
+    resetOtp.setExpiryDate(LocalDateTime.now().plusMinutes(10)); // OTP valid for 10 minutes
+    otpRepository.save(resetOtp);
+    
+    // Send OTP to user's email
+    emailService.sendPasswordResetOtp(user.getEmail(), otp);
+    
+    return ForgotPasswordResponse.builder()
+            .message("Password reset OTP sent to email")
+            .email(user.getEmail())
+            .build();
+}
+
+@Override
+@Transactional
+public ResetPasswordResponse resetPassword(ResetPasswordRequest request) {
+    // Validate OTP
+    PasswordResetOtp resetOtp = otpRepository.findByOtp(request.getOtp())
+            .orElseThrow(() -> new RuntimeException("Invalid OTP"));
+    
+    // Check if OTP is expired
+    if (resetOtp.getExpiryDate().isBefore(LocalDateTime.now())) {
+        throw new RuntimeException("OTP has expired");
+    }
+    
+    // Reset password
+    User user = resetOtp.getUser();
+    user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+    userRepository.save(user);
+    
+    // Delete used OTP
+    otpRepository.delete(resetOtp);
+    
+    return ResetPasswordResponse.builder()
+            .message("Password reset successful")
+            .username(user.getUsername())
+            .build();
+}
+```
+
+**Phân tích:**
+1. **Quy trình hai bước**:
+   - Bước 1: Gửi yêu cầu quên mật khẩu, nhận OTP qua email
+   - Bước 2: Gửi OTP và mật khẩu mới để đặt lại
+2. **Mã OTP**:
+   - Tạo mã OTP ngẫu nhiên
+   - Lưu trữ trong database với thời gian hết hạn
+3. **Xác thực OTP**:
+   - Kiểm tra OTP có tồn tại không
+   - Kiểm tra OTP có hết hạn không
+4. **Bảo mật**:
+   - OTP chỉ có hiệu lực trong 10 phút
+   - Mã hóa mật khẩu mới trước khi lưu
+   - Xóa OTP sau khi sử dụng
+
+## 2. Quản lý lịch hẹn (Appointment)
+
+### 2.1. Đặt lịch (Booking)
+
+**Controller:**
+```java
+@PostMapping
+public ResponseEntity<AppointmentResponseDto> createAppointment(@Valid @RequestBody AppointmentRequestDto request) {
+    return ResponseEntity.status(HttpStatus.CREATED).body(appointmentService.createAppointment(request));
+}
+```
+
+**Service:**
+```java
+@Override
+@Transactional
+public AppointmentResponseDto createAppointment(AppointmentRequestDto request) {
+    // Get current user
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    String username = authentication.getName();
+    User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    
+    // Check if user is a MEMBER
+    if (user.getRole() != ERole.ROLE_MEMBER) {
+        throw new AccessDeniedException("Only members can book appointments");
+    }
+    
+    // Get slot
+    Slot slot = slotRepository.findById(request.getSlotId())
+            .orElseThrow(() -> new ResourceNotFoundException("Slot not found"));
+    
+    // Check if slot is available
+    if (!slot.isAvailable()) {
+        throw new RuntimeException("Slot is not available");
+    }
+    
+    // Create appointment
+    Appointment appointment = new Appointment();
+    appointment.setUser(user);
+    appointment.setSlot(slot);
+    appointment.setNotes(request.getNotes());
+    appointment.setStatus(ApprovalStatus.PENDING);
+    
+    // Mark slot as unavailable
+    slot.setAvailable(false);
+    slotRepository.save(slot);
+    
+    Appointment savedAppointment = appointmentRepository.save(appointment);
+    
+    // Send confirmation email
+    emailService.sendAppointmentConfirmation(user.getEmail(), savedAppointment);
+    
+    return mapToAppointmentResponse(savedAppointment);
+}
+```
+
+**Phân tích:**
+1. **Xác thực người dùng**:
+   - Lấy thông tin người dùng hiện tại từ SecurityContextHolder
+   - Kiểm tra người dùng có vai trò MEMBER
+2. **Kiểm tra slot**:
+   - Xác minh slot tồn tại
+   - Kiểm tra slot có sẵn sàng không
+3. **Tạo appointment**:
+   - Thiết lập trạng thái PENDING (chờ xác nhận)
+   - Đánh dấu slot là không khả dụng
+4. **Thông báo**:
+   - Gửi email xác nhận đặt lịch
+5. **@Transactional**:
+   - Đảm bảo toàn vẹn dữ liệu, nếu có lỗi sẽ rollback
+
+### 2.2. Quản lý lịch hẹn cho Consultant
+
+**Controller:**
+```java
+@GetMapping("/consultant/appointments")
+@PreAuthorize("hasAuthority('ROLE_CONSULTANT')")
+public ResponseEntity<List<AppointmentResponseDto>> getConsultantAppointments() {
+    return ResponseEntity.ok(appointmentService.getAppointmentsForCurrentConsultant());
+}
+
+@PatchMapping("/consultant/appointments/{id}/status")
+@PreAuthorize("hasAuthority('ROLE_CONSULTANT')")
+public ResponseEntity<AppointmentResponseDto> updateAppointmentStatus(
+        @PathVariable Long id,
+        @RequestBody ApprovalRequest request) {
+    return ResponseEntity.ok(appointmentService.updateAppointmentStatus(id, request.getStatus()));
+}
+```
+
+**Service:**
+```java
+@Override
+public List<AppointmentResponseDto> getAppointmentsForCurrentConsultant() {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    String username = authentication.getName();
+    
+    User consultant = userRepository.findByUsername(username)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    
+    // Get consultant profile
+    Consultant consultantProfile = consultantRepository.findByUser(consultant)
+            .orElseThrow(() -> new RuntimeException("Consultant profile not found"));
+    
+    // Get appointments from slots created by this consultant
+    List<Appointment> appointments = appointmentRepository.findBySlot_Consultant(consultantProfile);
+    
+    return appointments.stream()
+            .map(this::mapToAppointmentResponse)
+            .collect(Collectors.toList());
+}
+
+@Override
+@Transactional
+public AppointmentResponseDto updateAppointmentStatus(Long appointmentId, ApprovalStatus status) {
+    Appointment appointment = appointmentRepository.findById(appointmentId)
+            .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+    
+    // Verify current user is the consultant for this appointment
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    String username = authentication.getName();
+    User currentUser = userRepository.findByUsername(username)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    
+    Consultant consultant = consultantRepository.findByUser(currentUser)
+            .orElseThrow(() -> new RuntimeException("Consultant profile not found"));
+    
+    if (!appointment.getSlot().getConsultant().getId().equals(consultant.getId())) {
+        throw new AccessDeniedException("You can only update your own appointments");
+    }
+    
+    // Update status
+    appointment.setStatus(status);
+    Appointment updatedAppointment = appointmentRepository.save(appointment);
+    
+    // If rejected, make the slot available again
+    if (status == ApprovalStatus.REJECTED) {
+        Slot slot = appointment.getSlot();
+        slot.setAvailable(true);
+        slotRepository.save(slot);
+    }
+    
+    // Send notification email
+    emailService.sendAppointmentStatusUpdate(
+            appointment.getUser().getEmail(),
+            updatedAppointment
+    );
+    
+    return mapToAppointmentResponse(updatedAppointment);
+}
+```
+
+**Phân tích:**
+1. **Lấy lịch hẹn của consultant**:
+   - Tìm profile consultant của người dùng hiện tại
+   - Lấy tất cả lịch hẹn thuộc các slot của consultant đó
+2. **Cập nhật trạng thái lịch hẹn**:
+   - Kiểm tra quyền: chỉ consultant của slot mới được cập nhật
+   - Cập nhật trạng thái (APPROVED/REJECTED)
+   - Nếu từ chối, đánh dấu slot là khả dụng lại
+   - Gửi email thông báo cập nhật trạng thái
+
+## 3. Consultant và Slot
+
+### 3.1. Quản lý Slot
+
+**Controller:**
+```java
+@PostMapping("/slots")
+@PreAuthorize("hasAuthority('ROLE_CONSULTANT')")
+public ResponseEntity<SlotResponseDto> createSlot(@Valid @RequestBody SlotRequestDto request) {
+    return ResponseEntity.status(HttpStatus.CREATED).body(slotService.createSlot(request));
+}
+
+@PostMapping("/slots/batch")
+@PreAuthorize("hasAuthority('ROLE_CONSULTANT')")
+public ResponseEntity<List<SlotResponseDto>> createBatchSlots(@Valid @RequestBody BatchSlotRequestDto request) {
+    return ResponseEntity.status(HttpStatus.CREATED).body(slotService.createBatchSlots(request));
+}
+```
+
+**Service:**
+```java
+@Override
+@Transactional
+public SlotResponseDto createSlot(SlotRequestDto request) {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    String username = authentication.getName();
+    
+    User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    
+    // Get consultant profile
+    Consultant consultant = consultantRepository.findByUser(user)
+            .orElseThrow(() -> new RuntimeException("Consultant profile not found"));
+    
+    // Validate time
+    LocalDateTime startTime = request.getStartTime();
+    LocalDateTime endTime = request.getEndTime();
+    
+    if (startTime.isBefore(LocalDateTime.now())) {
+        throw new RuntimeException("Start time cannot be in the past");
+    }
+    
+    if (endTime.isBefore(startTime)) {
+        throw new RuntimeException("End time must be after start time");
+    }
+    
+    // Check for overlapping slots
+    List<Slot> overlappingSlots = slotRepository.findOverlappingSlots(
+            consultant.getId(), startTime, endTime);
+    
+    if (!overlappingSlots.isEmpty()) {
+        throw new RuntimeException("Slot overlaps with existing slots");
+    }
+    
+    // Create slot
+    Slot slot = new Slot();
+    slot.setConsultant(consultant);
+    slot.setStartTime(startTime);
+    slot.setEndTime(endTime);
+    slot.setAvailable(true);
+    
+    Slot savedSlot = slotRepository.save(slot);
+    
+    return mapToSlotResponse(savedSlot);
+}
+
+@Override
+@Transactional
+public List<SlotResponseDto> createBatchSlots(BatchSlotRequestDto request) {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    String username = authentication.getName();
+    
+    User user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+    
+    // Get consultant profile
+    Consultant consultant = consultantRepository.findByUser(user)
+            .orElseThrow(() -> new RuntimeException("Consultant profile not found"));
+    
+    LocalDate startDate = request.getStartDate();
+    LocalDate endDate = request.getEndDate();
+    LocalTime startTime = request.getStartTime();
+    LocalTime endTime = request.getEndTime();
+    Set<DayOfWeek> daysOfWeek = request.getDaysOfWeek();
+    
+    // Validate dates
+    if (startDate.isBefore(LocalDate.now())) {
+        throw new RuntimeException("Start date cannot be in the past");
+    }
+    
+    if (endDate.isBefore(startDate)) {
+        throw new RuntimeException("End date must be after start date");
+    }
+    
+    if (endTime.isBefore(startTime)) {
+        throw new RuntimeException("End time must be after start time");
+    }
+    
+    List<Slot> createdSlots = new ArrayList<>();
+    
+    // Generate slots for each day in the range
+    LocalDate currentDate = startDate;
+    while (!currentDate.isAfter(endDate)) {
+        DayOfWeek currentDay = currentDate.getDayOfWeek();
+        
+        // Check if this day of week is selected
+        if (daysOfWeek.contains(currentDay)) {
+            LocalDateTime slotStartTime = LocalDateTime.of(currentDate, startTime);
+            LocalDateTime slotEndTime = LocalDateTime.of(currentDate, endTime);
+            
+            // Skip if start time is in the past
+            if (slotStartTime.isAfter(LocalDateTime.now())) {
+                // Check for overlapping slots
+                List<Slot> overlappingSlots = slotRepository.findOverlappingSlots(
+                        consultant.getId(), slotStartTime, slotEndTime);
+                
+                if (overlappingSlots.isEmpty()) {
+                    Slot slot = new Slot();
+                    slot.setConsultant(consultant);
+                    slot.setStartTime(slotStartTime);
+                    slot.setEndTime(slotEndTime);
+                    slot.setAvailable(true);
+                    
+                    createdSlots.add(slot);
+                }
+            }
+        }
+        
+        currentDate = currentDate.plusDays(1);
+    }
+    
+    // Save all slots
+    List<Slot> savedSlots = slotRepository.saveAll(createdSlots);
+    
+    return savedSlots.stream()
+            .map(this::mapToSlotResponse)
+            .collect(Collectors.toList());
+}
+```
+
+**Phân tích:**
+1. **Tạo slot đơn lẻ**:
+   - Xác thực consultant hiện tại
+   - Kiểm tra thời gian hợp lệ (không trong quá khứ, kết thúc sau bắt đầu)
+   - Kiểm tra trùng lặp với các slot khác
+2. **Tạo nhiều slot cùng lúc**:
+   - Xác định phạm vi ngày và thời gian
+   - Lọc theo ngày trong tuần được chọn
+   - Kiểm tra từng slot có hợp lệ không
+   - Sử dụng `saveAll` để tối ưu việc lưu vào database
+3. **Bảo vệ dữ liệu**:
+   - Kiểm tra nhiều điều kiện để đảm bảo tính hợp lệ
+   - Sử dụng @Transactional để đảm bảo toàn vẹn
+
+## 4. Manager Dashboard và Quản lý nội dung
+
+### 4.1. Dashboard thống kê
+
+**Controller:**
+```java
+@GetMapping("/dashboard")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<DashboardResponse> getManagerDashboard() {
+    return ResponseEntity.ok(enrollmentService.getDashboardStats());
+}
+```
+
+**Service:**
+```java
+public DashboardResponse getDashboardStats() {
+    // Tổng số lượng enrollment
+    long totalEnrollments = enrollmentRepository.count();
+    
+    // Số chứng chỉ đã được cấp (enrollment đã hoàn thành)
+    long completedCertificates = enrollmentRepository.findAll().stream()
+            .filter(CourseEnrollment::isCompleted)
+            .count();
+    
+    // Phần trăm người dùng đã làm survey
+    long totalUsers = userRepository.count();
+    long usersWithSurvey = surveyRepository.countTotalSurveyResults();
+    double surveyParticipationPercentage = totalUsers > 0 ? (usersWithSurvey * 100.0 / totalUsers) : 0;
+    
+    // Tổng số reviews đang chờ đánh giá (blogs + surveys)
+    long pendingBlogs = blogRepository.findByStatus(ApprovalStatus.PENDING).size();
+    long pendingSurveys = surveyRepository.countByStatus(ApprovalStatus.PENDING);
+    long pendingReviewsCount = pendingBlogs + pendingSurveys;
+    
+    // Số lượng enrollment trong năm hiện tại
+    int currentYear = LocalDate.now().getYear();
+    LocalDateTime startOfYear = LocalDateTime.of(currentYear, 1, 1, 0, 0);
+    long currentYearEnrollments = enrollmentRepository.findAll().stream()
+            .filter(e -> e.getEnrollmentDate().isAfter(startOfYear))
+            .count();
+    
+    // Số lượng người đang học (in progress)
+    long inProgressCount = enrollmentRepository.findAll().stream()
+            .filter(e -> !e.isCompleted() && e.getProgress() > 0)
+            .count();
+    
+    // Thống kê enrollment theo tháng
+    List<Map<String, Object>> monthlyEnrollments = getMonthlyEnrollments(currentYear);
+    
+    // Thống kê certificates theo tháng
+    List<Map<String, Object>> monthlyCertificates = getMonthlyCertificates(currentYear);
+    
+    return DashboardResponse.builder()
+            .totalEnrollments(totalEnrollments)
+            .completedCertificates(completedCertificates)
+            .surveyParticipationPercentage(surveyParticipationPercentage)
+            .pendingReviewsCount(pendingReviewsCount)
+            .currentYearEnrollments(currentYearEnrollments)
+            .inProgressCount(inProgressCount)
+            .monthlyEnrollments(monthlyEnrollments)
+            .monthlyCertificates(monthlyCertificates)
+            .build();
+}
+```
+
+**Phân tích:**
+1. **Thống kê đa chiều**:
+   - Tổng hợp dữ liệu từ nhiều nguồn (enrollment, survey, blog)
+   - Tính toán các chỉ số phức tạp (tỷ lệ, thống kê theo thời gian)
+2. **Sử dụng Stream API**:
+   - Filter và count trên collections
+   - Biến đổi dữ liệu
+3. **Mô hình dữ liệu chuẩn**:
+   - Sử dụng DTO riêng cho dashboard
+   - Cấu trúc phân cấp rõ ràng
+
+### 4.2. Phê duyệt nội dung
+
+**Controller:**
+```java
+@GetMapping("/blogs/pending")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<List<BlogResponse>> getPendingBlogs() {
+    List<BlogResponse> pendingBlogs = blogService.getBlogsByStatus(ApprovalStatus.PENDING);
+    return ResponseEntity.ok(pendingBlogs);
+}
+
+@PatchMapping("/blogs/{id}/approval")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<BlogResponse> updateBlogApprovalStatus(
+        @PathVariable Long id,
+        @RequestBody ApprovalRequest request) {
+    BlogResponse updatedBlog = blogService.updateBlogStatus(id, request.getStatus(), request.getComment());
+    return ResponseEntity.ok(updatedBlog);
+}
+```
+
+**Service:**
+```java
+@Override
+public List<BlogResponse> getBlogsByStatus(ApprovalStatus status) {
+    List<Blog> blogs = blogRepository.findByStatus(status);
+    return blogs.stream()
+            .map(blog -> {
+                List<BlogImage> blogImages = blogImageRepository.findByBlogPostId(blog.getId());
+                List<String> imageUrls = blogImages.stream()
+                        .map(BlogImage::getImageUrl)
+                        .collect(Collectors.toList());
+                return mapToResponse(blog, imageUrls, blog.getAuthor().getFullname());
+            })
+            .collect(Collectors.toList());
+}
+
+@Override
+@Transactional
+public BlogResponse updateBlogStatus(Long id, ApprovalStatus status, String comment) {
+    Blog blog = blogRepository.findById(id)
+            .orElseThrow(() -> new EntityNotFoundException("Blog không tìm thấy với id: " + id));
+    
+    // Kiểm tra quyền
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    String username = authentication.getName();
+    User currentUser = userRepository.findByUsername(username)
+            .orElseThrow(() -> new RuntimeException("User không tìm thấy"));
+            
+    if (currentUser.getRole() != ERole.ROLE_MANAGER && currentUser.getRole() != ERole.ROLE_ADMIN) {
+        throw new AccessDeniedException("Chỉ MANAGER và ADMIN mới có thể cập nhật trạng thái blog");
+    }
+    
+    blog.setStatus(status);
+    // Có thể thêm lưu comment nếu cần
+    
+    Blog updatedBlog = blogRepository.save(blog);
+    
+    List<BlogImage> blogImages = blogImageRepository.findByBlogPostId(updatedBlog.getId());
+    List<String> imageUrls = blogImages.stream()
+            .map(BlogImage::getImageUrl)
+            .collect(Collectors.toList());
+            
+    return mapToResponse(updatedBlog, imageUrls, updatedBlog.getAuthor().getFullname());
+}
+```
+
+**Phân tích:**
+1. **Lọc theo trạng thái**:
+   - Lấy danh sách blog theo trạng thái PENDING
+   - Chuyển đổi entity thành DTO
+2. **Cập nhật trạng thái**:
+   - Kiểm tra quyền MANAGER hoặc ADMIN
+   - Cập nhật trạng thái và lưu
+   - Trả về thông tin blog đã cập nhật
+3. **Xử lý hình ảnh**:
+   - Lấy danh sách URL hình ảnh của blog
+   - Đưa vào response
+
+## 5. Kiến trúc và thiết kế hệ thống
+
+### 5.1. Mô hình phân lớp
+
+Hệ thống được thiết kế theo mô hình phân lớp rõ ràng:
+
+1. **Presentation Layer (Controller)**:
+   - Xử lý request và response
+   - Định tuyến
+   - Xác thực quyền truy cập
+   
+2. **Business Layer (Service)**:
+   - Chứa logic nghiệp vụ
+   - Xác thực dữ liệu
+   - Chuyển đổi giữa entity và DTO
+   
+3. **Data Access Layer (Repository)**:
+   - Truy xuất và lưu trữ dữ liệu
+   - Định nghĩa các truy vấn đặc biệt
+   
+4. **Domain Layer (Entity)**:
+   - Biểu diễn dữ liệu
+   - Định nghĩa quan hệ
+
+### 5.2. Cơ chế bảo mật
+
+1. **JWT Authentication**:
+   - Token-based authentication
+   - Stateless, không lưu session
+   - Access token và refresh token
+
+2. **Authorization**:
+   - Method-level với @PreAuthorize
+   - Kiểm tra quyền trong service
+   - Role-based access control (RBAC)
+
+3. **Password Security**:
+   - Mã hóa mật khẩu với BCrypt
+   - OTP cho reset password
+   - Thời gian hết hạn cho token và OTP
+
+### 5.3. Mô hình dữ liệu
+
+1. **Entities**:
+   - User: Thông tin người dùng, vai trò
+   - Consultant: Profile của consultant
+   - Slot: Khung giờ tư vấn
+   - Appointment: Lịch hẹn
+   - Blog: Bài viết
+   - Survey: Khảo sát
+   - Course: Khóa học
+   - CourseEnrollment: Đăng ký khóa học
+
+2. **Relationships**:
+   - User - Consultant: One-to-One
+   - Consultant - Slot: One-to-Many
+   - Slot - Appointment: One-to-One
+   - User - Appointment: One-to-Many
+   - User - Blog: One-to-Many
+   - User - CourseEnrollment: One-to-Many
