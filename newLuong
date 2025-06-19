@@ -1,0 +1,599 @@
+
+# Chi tiết luồng Đặt lịch, Consultant và Slot trong hệ thống của bạn
+
+## 1. Mô hình quan hệ dữ liệu
+
+Dựa trên code thực tế trong project của bạn, mô hình quan hệ dữ liệu như sau:
+
+```
+User (1) --- (0..1) Consultant (1) --- (*) Slot
+                        |
+                        | (1)
+                        ↓
+                     (*) Appointment --- (0..1) User
+                            |
+                            | (1)
+                            ↓
+                          Topic
+```
+
+**Đặc điểm quan hệ:**
+- `Consultant` kế thừa từ `User` (quan hệ is-a)
+- Mỗi `Consultant` có thể tạo nhiều `Slot` (quan hệ 1-n)
+- Mỗi `Consultant` có thể có nhiều `Appointment` (quan hệ 1-n)
+- Mỗi `Appointment` liên kết với một `Topic` (quan hệ n-1)
+- Mỗi `Appointment` có thể được đặt bởi một `User` hoặc một khách (guest) không đăng nhập
+
+## 2. Chi tiết các Entity
+
+### Consultant Entity
+```java
+@Entity
+@Table(name = "consultants")
+public class Consultant extends User {
+    @Column(name = "specialization")
+    private String specialization;
+
+    @OneToMany(mappedBy = "consultant", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Appointment> appointments = new ArrayList<>();
+
+    @OneToMany(mappedBy = "consultant", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Slot> slots = new ArrayList<>();
+}
+```
+
+**Đặc điểm:**
+- `Consultant` kế thừa từ `User`, nghĩa là một tư vấn viên cũng là một người dùng với đầy đủ thông tin như username, password, email, v.v.
+- Mỗi tư vấn viên có thông tin chuyên môn (`specialization`)
+- Mỗi tư vấn viên quản lý danh sách các cuộc hẹn và các khung giờ (slot) của mình
+
+### Slot Entity
+```java
+@Entity
+@Table(name = "slots")
+public class Slot {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "date", nullable = false)
+    private LocalDate date;
+
+    @Column(name = "start_time", nullable = false)
+    private LocalTime startTime;
+
+    @Column(name = "end_time", nullable = false)
+    private LocalTime endTime;
+
+    @Column(name = "is_available", nullable = false)
+    private boolean isAvailable = true;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "consultant_id", nullable = false)
+    private Consultant consultant;
+}
+```
+
+**Đặc điểm:**
+- Mỗi `Slot` đại diện cho một khung giờ làm việc của tư vấn viên
+- Thông tin bao gồm ngày (`date`), giờ bắt đầu (`startTime`), giờ kết thúc (`endTime`)
+- Trạng thái `isAvailable` cho biết slot có thể đặt lịch hay không
+- Mỗi slot thuộc về một tư vấn viên cụ thể
+
+### Appointment Entity
+```java
+@Entity
+@Table(name = "appointments")
+public class Appointment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "customer_name", nullable = false)
+    private String customerName;
+
+    @Column(name = "phone_number")
+    private String phoneNumber;
+
+    @Column(name = "email", nullable = false)
+    private String email;
+
+    @Column(name = "appointment_date", nullable = false)
+    private LocalDate appointmentDate;
+
+    @Column(name = "appointment_time", nullable = false)
+    private LocalTime appointmentTime;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "topic_id", nullable = false)
+    private Topic topic;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "consultant_id", nullable = false)
+    private Consultant consultant;
+
+    @Column(name = "is_guest", nullable = false)
+    private boolean isGuest = true;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Column(name = "status")
+    private String status = "PENDING"; // PENDING, CONFIRMED, CANCELED, COMPLETED
+}
+```
+
+**Đặc điểm:**
+- Mỗi `Appointment` đại diện cho một cuộc hẹn tư vấn
+- Lưu thông tin người đặt: tên, số điện thoại, email
+- Lưu thông tin thời gian: ngày và giờ hẹn
+- Liên kết với một chủ đề tư vấn (`Topic`)
+- Liên kết với một tư vấn viên (`Consultant`)
+- Trường `isGuest` xác định người đặt là khách hay thành viên đã đăng nhập
+- Nếu là thành viên đã đăng nhập, liên kết với `User`
+- Trạng thái cuộc hẹn: PENDING, CONFIRMED, CANCELED, COMPLETED
+
+## 3. Luồng quản lý Consultant
+
+Trong hệ thống của bạn, quản lý Consultant khá đơn giản thông qua `ConsultantController`:
+
+```java
+@GetMapping("/api/consultants")
+public ResponseEntity<List<Consultant>> getAllConsultants() {
+    List<Consultant> consultants = consultantRepository.findByEnabledTrue();
+    return ResponseEntity.ok(consultants);
+}
+
+@GetMapping("/api/consultants/{id}")
+public ResponseEntity<Consultant> getConsultantById(@PathVariable Long id) {
+    return consultantRepository.findById(id)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
+}
+```
+
+**Đặc điểm:**
+- API lấy danh sách tất cả tư vấn viên đang hoạt động (`enabled = true`)
+- API lấy thông tin chi tiết của một tư vấn viên theo ID
+- Có dashboard riêng cho tư vấn viên với phân quyền phù hợp
+
+## 4. Luồng quản lý Slot
+
+### 4.1. Tạo Slot
+
+```java
+@PostMapping
+@PreAuthorize("hasAuthority('ROLE_CONSULTANT')")
+public ResponseEntity<SlotResponseDto> createSlot(@Valid @RequestBody SlotRequestDto requestDto) {
+    SlotResponseDto responseDto = slotService.createSlot(requestDto);
+    return new ResponseEntity<>(responseDto, HttpStatus.CREATED);
+}
+```
+
+**Xử lý trong Service:**
+```java
+@Override
+public SlotResponseDto createSlot(SlotRequestDto requestDto) {
+    Consultant consultant = consultantRepository.findById(requestDto.getConsultantId())
+            .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tư vấn viên với ID: " + requestDto.getConsultantId()));
+
+    // Tạo đối tượng Slot từ requestDto
+    Slot slot = new Slot();
+    slot.setDate(requestDto.getDate());
+    slot.setStartTime(requestDto.getStartTime());
+    slot.setEndTime(requestDto.getEndTime());
+    slot.setConsultant(consultant);
+    slot.setAvailable(requestDto.isAvailable());
+
+    Slot savedSlot = slotRepository.save(slot);
+    return mapToResponseDto(savedSlot);
+}
+```
+
+**Đặc điểm:**
+- Chỉ tư vấn viên mới có quyền tạo slot (`@PreAuthorize("hasAuthority('ROLE_CONSULTANT')")`)
+- Mỗi slot bao gồm ngày, giờ bắt đầu, giờ kết thúc và thuộc về một tư vấn viên cụ thể
+- Mặc định slot được đánh dấu là khả dụng (`isAvailable = true`)
+
+### 4.2. Lấy danh sách Slot
+
+```java
+@GetMapping("/consultant/{consultantId}")
+public ResponseEntity<List<SlotResponseDto>> getSlotsByConsultantId(@PathVariable Long consultantId) {
+    List<Slot> slots = slotService.getSlotsByConsultantId(consultantId);
+    List<SlotResponseDto> responseDtos = slots.stream()
+            .map(this::mapToResponseDto)
+            .collect(Collectors.toList());
+    return ResponseEntity.ok(responseDtos);
+}
+
+@GetMapping("/available")
+public ResponseEntity<List<SlotResponseDto>> getAvailableSlots(
+        @RequestParam Long consultantId,
+        @RequestParam @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate date) {
+    List<Slot> availableSlots = slotService.getAvailableSlotsByConsultantAndDate(consultantId, date);
+    List<SlotResponseDto> responseDtos = availableSlots.stream()
+            .map(this::mapToResponseDto)
+            .collect(Collectors.toList());
+    return ResponseEntity.ok(responseDtos);
+}
+```
+
+**Đặc điểm:**
+- API lấy tất cả slot của một tư vấn viên
+- API lấy các slot khả dụng (`isAvailable = true`) của một tư vấn viên vào một ngày cụ thể
+- Endpoint `/api/slots/available` là công khai, cho phép người dùng tìm kiếm các slot trống để đặt lịch
+
+### 4.3. Cập nhật và Xóa Slot
+
+```java
+@PatchMapping("/{slotId}/availability")
+public ResponseEntity<SlotResponseDto> updateSlotAvailability(
+        @PathVariable Long slotId,
+        @RequestParam boolean isAvailable,
+        @RequestParam Long consultantId) {
+    Slot updatedSlot = slotService.updateSlotAvailability(slotId, isAvailable, consultantId);
+    SlotResponseDto responseDto = mapToResponseDto(updatedSlot);
+    return ResponseEntity.ok(responseDto);
+}
+
+@DeleteMapping("/{slotId}")
+public ResponseEntity<Void> deleteSlot(
+        @PathVariable Long slotId,
+        @RequestParam Long consultantId) {
+    slotService.deleteSlot(slotId, consultantId);
+    return ResponseEntity.noContent().build();
+}
+```
+
+**Đặc điểm:**
+- Tư vấn viên có thể cập nhật trạng thái khả dụng của slot
+- Tư vấn viên có thể xóa slot
+- Có kiểm tra quyền: chỉ tư vấn viên sở hữu slot mới có thể cập nhật hoặc xóa
+
+## 5. Luồng đặt lịch (Appointment)
+
+### 5.1. Tạo Appointment
+
+```java
+@PostMapping
+public ResponseEntity<AppointmentResponseDto> createAppointment(@Valid @RequestBody AppointmentRequestDto requestDto) {
+    AppointmentResponseDto responseDto = appointmentService.createAppointment(requestDto);
+    return new ResponseEntity<>(responseDto, HttpStatus.CREATED);
+}
+```
+
+**Xử lý trong Service:**
+```java
+@Override
+public AppointmentResponseDto createAppointment(AppointmentRequestDto requestDto) {
+    // Lấy topic theo ID
+    Topic topic = topicRepository.findByIdAndActive(requestDto.getTopicId(), true);
+    if(topic == null) {
+        throw new ResourceNotFoundException("Không tìm thấy chủ đề với ID: " + requestDto.getTopicId());
+    }
+
+    // Xử lý consultant
+    Consultant consultant = null;
+    Slot matchedSlot = null;
+    
+    // Tìm consultant phù hợp
+    List<Consultant> availableConsultants = consultantRepository.findByEnabledTrue();
+    
+    if (availableConsultants.isEmpty()) {
+        throw new ResourceNotFoundException("Không có tư vấn viên nào đang hoạt động");
+    }
+    
+    // Duyệt từng consultant để tìm slot phù hợp
+    for (Consultant c : availableConsultants) {
+        Optional<Slot> optionalSlot = slotRepository.findAvailableSlotByConsultantAndDateTime(
+                c.getId(),
+                requestDto.getAppointmentDate(),
+                requestDto.getAppointmentTime());
+        
+        if (optionalSlot.isPresent()) {
+            consultant = c;
+            matchedSlot = optionalSlot.get();
+            break;
+        }
+    }
+    
+    // Nếu duyệt xong vẫn không tìm thấy slot phù hợp
+    if (matchedSlot == null) {
+        throw new ResourceNotFoundException("Không có tư vấn viên nào rảnh vào thời điểm này");
+    }
+
+    // Khởi tạo đối tượng Appointment
+    Appointment appointment = new Appointment();
+    appointment.setCustomerName(requestDto.getCustomerName());
+    appointment.setPhoneNumber(requestDto.getPhoneNumber());
+    appointment.setEmail(requestDto.getEmail());
+    appointment.setAppointmentDate(requestDto.getAppointmentDate());
+    appointment.setAppointmentTime(requestDto.getAppointmentTime());
+    appointment.setTopic(topic);
+    appointment.setConsultant(consultant);
+    appointment.setStatus("PENDING");
+
+    // Nếu có userId, đây là thành viên đã đăng nhập
+    if (requestDto.getUserId() != null) {
+        User user = userRepository.findById(requestDto.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng với ID: " + requestDto.getUserId()));
+        appointment.setUser(user);
+        appointment.setGuest(false);
+    } else {
+        // Nếu không có userId, đây là khách
+        appointment.setGuest(true);
+    }
+
+    // Cập nhật trạng thái slot
+    matchedSlot.setAvailable(false);
+    slotRepository.save(matchedSlot);
+
+    // Lưu vào database
+    Appointment savedAppointment = appointmentRepository.save(appointment);
+
+    // Gửi email xác nhận đặt lịch
+    emailService.sendAppointmentConfirmation(savedAppointment);
+
+    // Chuyển đổi thành AppointmentResponseDto và trả về
+    return mapToResponseDto(savedAppointment);
+}
+```
+
+**Đặc điểm:**
+- API đặt lịch có thể được sử dụng bởi cả khách (guest) và thành viên đã đăng nhập (member)
+- Hệ thống tự động tìm tư vấn viên phù hợp và slot trống
+- Sau khi tạo appointment, slot tương ứng được đánh dấu là không khả dụng (`isAvailable = false`)
+- Gửi email xác nhận đặt lịch cho người đặt
+
+### 5.2. Quản lý Appointment
+
+```java
+@GetMapping
+public ResponseEntity<List<AppointmentResponseDto>> getAllAppointments() {
+    List<AppointmentResponseDto> appointments = appointmentService.getAllAppointments();
+    return ResponseEntity.ok(appointments);
+}
+
+@GetMapping("/{id}")
+public ResponseEntity<AppointmentResponseDto> getAppointmentById(@PathVariable Long id) {
+    AppointmentResponseDto appointment = appointmentService.getAppointmentById(id);
+    return ResponseEntity.ok(appointment);
+}
+
+@GetMapping("/guest")
+public ResponseEntity<List<AppointmentResponseDto>> getGuestAppointments(@RequestParam String email) {
+    List<AppointmentResponseDto> appointments = appointmentService.getAppointmentsByGuestEmail(email);
+    return ResponseEntity.ok(appointments);
+}
+
+@GetMapping("/user/{userId}")
+public ResponseEntity<List<AppointmentResponseDto>> getUserAppointments(@PathVariable Long userId) {
+    List<AppointmentResponseDto> appointments = appointmentService.getAppointmentsByUserId(userId);
+    return ResponseEntity.ok(appointments);
+}
+
+@GetMapping("/consultant/{consultantId}")
+public ResponseEntity<List<AppointmentResponseDto>> getConsultantAppointments(@PathVariable Long consultantId) {
+    List<AppointmentResponseDto> appointments = appointmentService.getAppointmentsByConsultantId(consultantId);
+    return ResponseEntity.ok(appointments);
+}
+```
+
+**Đặc điểm:**
+- API lấy tất cả cuộc hẹn (dành cho admin)
+- API lấy cuộc hẹn theo ID
+- API lấy cuộc hẹn của khách (guest) theo email
+- API lấy cuộc hẹn của thành viên (member) theo userId
+- API lấy cuộc hẹn của tư vấn viên theo consultantId
+
+### 5.3. Cập nhật trạng thái Appointment
+
+```java
+@PatchMapping("/{id}/status")
+public ResponseEntity<AppointmentResponseDto> updateAppointmentStatus(
+        @PathVariable Long id, 
+        @RequestParam String status,
+        @RequestParam(required = false) Long consultantId) {
+    
+    AppointmentResponseDto updatedAppointment;
+    
+    if (consultantId != null) {
+        // Sử dụng phương thức với consultantId được cung cấp
+        updatedAppointment = appointmentService.updateAppointmentStatus(id, status, consultantId);
+    } else {
+        // Sử dụng phương thức lấy consultantId từ JWT token
+        updatedAppointment = appointmentService.updateAppointmentStatus(id, status);
+    }
+    
+    return ResponseEntity.ok(updatedAppointment);
+}
+```
+
+**Xử lý trong Service:**
+```java
+@Override
+public AppointmentResponseDto updateAppointmentStatus(Long id, String status, Long consultantId) {
+    Appointment appointment = appointmentRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cuộc hẹn với ID: " + id));
+
+    // Kiểm tra xem cuộc hẹn có thuộc về tư vấn viên này không
+    if (!Objects.equals(appointment.getConsultant().getId(), consultantId)) {
+        throw new IllegalArgumentException("Tư vấn viên không có quyền cập nhật cuộc hẹn này");
+    }
+
+    // Kiểm tra status hợp lệ
+    if (!isValidStatus(status)) {
+        throw new IllegalArgumentException("Trạng thái không hợp lệ: " + status);
+    }
+
+    // Lưu trạng thái cũ để gửi email
+    String previousStatus = appointment.getStatus();
+
+    appointment.setStatus(status);
+    Appointment updatedAppointment = appointmentRepository.save(appointment);
+
+    // Gửi email cập nhật trạng thái
+    emailService.sendAppointmentStatusUpdate(updatedAppointment, previousStatus);
+
+    return mapToResponseDto(updatedAppointment);
+}
+```
+
+**Đặc điểm:**
+- Tư vấn viên có thể cập nhật trạng thái cuộc hẹn (PENDING, CONFIRMED, CANCELED, COMPLETED)
+- Có kiểm tra quyền: chỉ tư vấn viên sở hữu cuộc hẹn mới có thể cập nhật
+- Gửi email thông báo cập nhật trạng thái cho người đặt lịch
+
+### 5.4. Hủy Appointment
+
+```java
+@PostMapping("/{id}/cancel/user/{userId}")
+public ResponseEntity<AppointmentResponseDto> cancelUserAppointment(
+        @PathVariable Long id,
+        @PathVariable Long userId) {
+    AppointmentResponseDto canceledAppointment = appointmentService.cancelAppointmentByUser(id, userId);
+    return ResponseEntity.ok(canceledAppointment);
+}
+
+@PostMapping("/{id}/cancel/guest")
+public ResponseEntity<AppointmentResponseDto> cancelGuestAppointment(
+        @PathVariable Long id,
+        @RequestParam String email) {
+    AppointmentResponseDto canceledAppointment = appointmentService.cancelAppointmentByGuest(id, email);
+    return ResponseEntity.ok(canceledAppointment);
+}
+```
+
+**Xử lý trong Service:**
+```java
+@Override
+public AppointmentResponseDto cancelAppointmentByUser(Long id, Long userId) {
+    Appointment appointment = appointmentRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cuộc hẹn với ID: " + id));
+
+    // Kiểm tra xem cuộc hẹn có thuộc về user này không
+    if (appointment.isGuest() || !Objects.equals(appointment.getUser().getId(), userId)) {
+        throw new IllegalArgumentException("Người dùng không có quyền hủy cuộc hẹn này");
+    }
+
+    // Kiểm tra nếu cuộc hẹn đã hoàn thành hoặc đã hủy rồi
+    if (appointment.getStatus().equals("COMPLETED") || appointment.getStatus().equals("CANCELED")) {
+        throw new IllegalArgumentException("Không thể hủy cuộc hẹn đã " +
+                (appointment.getStatus().equals("COMPLETED") ? "hoàn thành" : "hủy"));
+    }
+
+    // Lưu trạng thái cũ để gửi email
+    String previousStatus = appointment.getStatus();
+
+    // Cập nhật trạng thái thành CANCELED
+    appointment.setStatus("CANCELED");
+    Appointment updatedAppointment = appointmentRepository.save(appointment);
+
+    // Gửi email thông báo hủy cuộc hẹn
+    emailService.sendAppointmentStatusUpdate(updatedAppointment, previousStatus);
+
+    return mapToResponseDto(updatedAppointment);
+}
+```
+
+**Đặc điểm:**
+- Người dùng có thể hủy cuộc hẹn của mình
+- Khách (guest) có thể hủy cuộc hẹn bằng cách cung cấp email
+- Có kiểm tra quyền: chỉ người đặt lịch mới có thể hủy cuộc hẹn của mình
+- Không thể hủy cuộc hẹn đã hoàn thành hoặc đã hủy
+- Gửi email thông báo hủy cuộc hẹn
+
+## 6. Tóm tắt luồng hoạt động đầy đủ
+
+### 6.1. Luồng tạo và quản lý Slot (dành cho tư vấn viên)
+
+1. Tư vấn viên đăng nhập vào hệ thống
+2. Tư vấn viên tạo các slot thời gian rảnh:
+   ```
+   POST /api/slots
+   {
+     "consultantId": 123,
+     "date": "2023-06-15",
+     "startTime": "09:00",
+     "endTime": "10:00",
+     "isAvailable": true
+   }
+   ```
+3. Tư vấn viên có thể xem danh sách các slot của mình:
+   ```
+   GET /api/slots/consultant/123
+   ```
+4. Tư vấn viên có thể cập nhật trạng thái khả dụng của slot:
+   ```
+   PATCH /api/slots/456/availability?isAvailable=false&consultantId=123
+   ```
+5. Tư vấn viên có thể xóa slot:
+   ```
+   DELETE /api/slots/456?consultantId=123
+   ```
+
+### 6.2. Luồng đặt lịch (dành cho người dùng)
+
+1. Người dùng truy cập trang đặt lịch
+2. Người dùng chọn chủ đề (topic) quan tâm
+3. Người dùng xem danh sách các slot khả dụng:
+   ```
+   GET /api/slots/available?consultantId=123&date=15/06/2023
+   ```
+4. Người dùng điền thông tin và đặt lịch:
+   ```
+   POST /api/appointments
+   {
+     "customerName": "Nguyễn Văn A",
+     "phoneNumber": "0123456789",
+     "email": "nguyenvana@example.com",
+     "appointmentDate": "2023-06-15",
+     "appointmentTime": "09:00",
+     "topicId": 789,
+     "userId": 456  // Nếu là thành viên đã đăng nhập
+   }
+   ```
+5. Hệ thống tự động tìm tư vấn viên phù hợp và slot trống
+6. Hệ thống tạo cuộc hẹn với trạng thái "PENDING"
+7. Hệ thống gửi email xác nhận đặt lịch
+
+### 6.3. Luồng xem và quản lý lịch hẹn (dành cho người dùng)
+
+1. Người dùng đã đăng nhập có thể xem lịch sử đặt lịch:
+   ```
+   GET /api/appointments/user/456
+   ```
+2. Khách chưa đăng nhập có thể xem lịch sử đặt lịch bằng email:
+   ```
+   GET /api/appointments/guest?email=nguyenvana@example.com
+   ```
+3. Người dùng có thể hủy cuộc hẹn:
+   ```
+   POST /api/appointments/789/cancel/user/456  // Nếu là thành viên đã đăng nhập
+   POST /api/appointments/789/cancel/guest?email=nguyenvana@example.com  // Nếu là khách
+   ```
+
+### 6.4. Luồng quản lý lịch hẹn (dành cho tư vấn viên)
+
+1. Tư vấn viên đăng nhập vào hệ thống
+2. Tư vấn viên xem danh sách các cuộc hẹn của mình:
+   ```
+   GET /api/appointments/consultant/123
+   ```
+3. Tư vấn viên xác nhận hoặc từ chối cuộc hẹn:
+   ```
+   PATCH /api/appointments/789/status?status=CONFIRMED&consultantId=123
+   PATCH /api/appointments/789/status?status=CANCELED&consultantId=123
+   ```
+4. Sau khi tư vấn xong, tư vấn viên đánh dấu cuộc hẹn là đã hoàn thành:
+   ```
+   PATCH /api/appointments/789/status?status=COMPLETED&consultantId=123
+   ```
+5. Tư vấn viên có thể xem lịch sử các cuộc hẹn đã hoàn thành hoặc đã hủy:
+   ```
+   GET /api/appointments/consultant/123/history
+   ```
+
+Đây là phân tích chi tiết về luồng Đặt lịch, Consultant và Slot trong hệ thống của bạn dựa trên code thực tế. Hệ thống có thiết kế khá đầy đủ và linh hoạt, cho phép cả người dùng đã đăng nhập và khách chưa đăng nhập đều có thể đặt lịch, đồng thời cung cấp các công cụ quản lý hiệu quả cho tư vấn viên.
