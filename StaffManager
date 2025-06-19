@@ -1,0 +1,220 @@
+# Phân tích chi tiết và dễ hiểu về vai trò Staff và Manager
+
+## 1. Tổng quan về Staff và Manager
+
+### Staff là gì?
+Staff là nhân viên trong hệ thống, có nhiệm vụ tạo nội dung như bài viết (blogs), khảo sát (surveys) và khóa học (courses). Họ là người trực tiếp xây dựng các tài nguyên giáo dục và tư vấn trên nền tảng.
+
+### Manager là gì?
+Manager là người quản lý, có nhiệm vụ kiểm duyệt nội dung do Staff tạo ra, quản lý các chủ đề (topics), theo dõi hoạt động của hệ thống và tạo báo cáo. Manager đóng vai trò trung gian giữa Admin (người có quyền cao nhất) và Staff.
+
+## 2. Mối quan hệ giữa Staff và Manager
+
+Mối quan hệ giữa Staff và Manager là mối quan hệ "tạo nội dung - phê duyệt nội dung":
+
+1. **Staff tạo nội dung** → **Manager kiểm duyệt** → **Nội dung được công khai**
+
+2. Nếu Manager từ chối nội dung → Staff chỉnh sửa → Gửi lại để Manager duyệt
+
+Đây là quy trình kiểm soát chất lượng để đảm bảo tất cả nội dung trên hệ thống đều đạt tiêu chuẩn trước khi được công khai.
+
+## 3. Quy trình làm việc của Staff
+
+### 3.1. Tạo nội dung mới
+
+**Bước 1: Tạo nội dung**
+- Staff đăng nhập vào hệ thống
+- Staff chọn loại nội dung muốn tạo (blog, khảo sát hoặc khóa học)
+- Staff nhập thông tin cần thiết (tiêu đề, nội dung, hình ảnh...)
+- Staff có thể chọn:
+  - **Lưu nháp**: Nội dung được lưu nhưng chưa gửi đi duyệt
+  - **Gửi duyệt**: Nội dung được gửi cho Manager kiểm duyệt
+
+**Bước 2: Chờ phê duyệt**
+- Khi Staff gửi nội dung đi duyệt, trạng thái nội dung sẽ chuyển thành "Đang chờ duyệt"
+- Staff có thể theo dõi trạng thái duyệt trong phần quản lý nội dung của mình
+
+**Bước 3: Nhận kết quả duyệt**
+- Staff nhận thông báo khi Manager đã duyệt hoặc từ chối nội dung
+- Nếu được duyệt: Nội dung sẽ được công khai trên hệ thống
+- Nếu bị từ chối: Staff sẽ nhận được lý do từ chối
+
+### 3.2. Chỉnh sửa nội dung
+
+**Trường hợp 1: Chỉnh sửa nháp**
+- Staff có thể chỉnh sửa bất kỳ nội dung nào đang ở trạng thái "Nháp"
+- Sau khi chỉnh sửa, Staff có thể tiếp tục lưu nháp hoặc gửi đi duyệt
+
+**Trường hợp 2: Chỉnh sửa nội dung bị từ chối**
+- Staff xem lý do từ chối từ Manager
+- Staff chỉnh sửa nội dung theo góp ý
+- Staff gửi lại nội dung để duyệt
+
+**Lưu ý**: Staff không thể chỉnh sửa nội dung đang chờ duyệt hoặc đã được duyệt.
+
+### 3.3. Xem danh sách nội dung
+
+Staff có thể:
+- Xem tất cả nội dung do mình tạo
+- Lọc theo trạng thái (nháp, đang chờ duyệt, đã duyệt, bị từ chối)
+- Xem nội dung đã được duyệt của người khác
+
+## 4. Quy trình làm việc của Manager
+
+### 4.1. Quản lý Topic (Chủ đề)
+
+**Bước 1: Tạo Topic mới**
+- Manager đăng nhập vào hệ thống
+- Manager truy cập trang quản lý Topic
+- Manager nhập thông tin Topic (tên, mô tả)
+- Manager lưu Topic mới
+
+**Bước 2: Quản lý Topic hiện có**
+- Manager có thể xem, sửa, xóa các Topic
+- Topic được sử dụng để phân loại nội dung (blog, khóa học)
+
+### 4.2. Duyệt nội dung
+
+**Bước 1: Xem danh sách nội dung chờ duyệt**
+- Manager truy cập trang quản lý nội dung chờ duyệt
+- Manager có thể lọc theo loại nội dung (blog, khảo sát, khóa học)
+
+**Bước 2: Kiểm tra nội dung**
+- Manager chọn một nội dung để xem chi tiết
+- Manager đánh giá nội dung dựa trên các tiêu chí chất lượng
+
+**Bước 3: Quyết định duyệt hoặc từ chối**
+- Nếu nội dung đạt yêu cầu: Manager chọn "Duyệt"
+- Nếu nội dung chưa đạt: Manager chọn "Từ chối" và nhập lý do từ chối
+
+**Bước 4: Hệ thống thông báo cho Staff**
+- Hệ thống gửi email và thông báo trong hệ thống cho Staff
+- Thông báo bao gồm kết quả duyệt và lý do (nếu từ chối)
+
+### 4.3. Xem Dashboard và báo cáo
+
+**Bước 1: Truy cập Dashboard**
+- Manager xem các số liệu thống kê:
+  - Số lượng Staff, Consultant
+  - Số lượng nội dung (đã duyệt, đang chờ duyệt)
+  - Số lượng ghi danh khóa học
+  - Số lượng cuộc hẹn tư vấn
+
+**Bước 2: Tạo báo cáo**
+- Manager chọn khoảng thời gian (tuần, tháng, năm)
+- Manager chọn loại báo cáo muốn tạo
+- Manager xuất báo cáo dưới dạng PDF hoặc Excel
+
+## 5. Ví dụ minh họa quy trình làm việc
+
+### Ví dụ 1: Staff tạo bài viết và được duyệt
+
+1. **Ngày 1**: 
+   - Staff Nguyễn Văn A tạo bài viết "10 cách giảm stress hiệu quả"
+   - Staff chọn Topic "Sức khỏe tâm lý"
+   - Staff gửi bài viết đi duyệt
+
+2. **Ngày 2**:
+   - Manager Trần Thị B nhận thông báo có bài viết mới cần duyệt
+   - Manager xem xét bài viết và thấy nội dung chất lượng
+   - Manager duyệt bài viết
+
+3. **Ngày 2 (sau khi duyệt)**:
+   - Staff Nguyễn Văn A nhận thông báo bài viết đã được duyệt
+   - Bài viết xuất hiện trên trang chính của hệ thống
+   - Người dùng có thể đọc bài viết
+
+### Ví dụ 2: Staff tạo khóa học và cần chỉnh sửa
+
+1. **Ngày 1**:
+   - Staff Lê Văn C tạo khóa học "Kỹ năng giao tiếp cơ bản"
+   - Staff thêm 5 bài học và gửi đi duyệt
+
+2. **Ngày 3**:
+   - Manager Trần Thị B xem xét khóa học
+   - Manager thấy bài học số 3 còn thiếu video minh họa
+   - Manager từ chối với lý do "Bài học 3 cần bổ sung video minh họa"
+
+3. **Ngày 4**:
+   - Staff Lê Văn C nhận thông báo khóa học bị từ chối
+   - Staff xem lý do và chỉnh sửa bài học số 3, thêm video
+   - Staff gửi lại khóa học để duyệt
+
+4. **Ngày 5**:
+   - Manager Trần Thị B xem lại khóa học
+   - Manager thấy đã có video minh họa đầy đủ
+   - Manager duyệt khóa học
+   - Khóa học xuất hiện trong danh sách khóa học công khai
+
+## 6. Các tính năng chính của Staff
+
+1. **Quản lý Blog**:
+   - Tạo bài viết mới
+   - Chỉnh sửa bài viết (nháp hoặc bị từ chối)
+   - Xem danh sách bài viết của mình
+   - Xem trạng thái duyệt
+
+2. **Quản lý Survey (Khảo sát)**:
+   - Tạo khảo sát mới với nhiều loại câu hỏi
+   - Chỉnh sửa khảo sát
+   - Xem kết quả khảo sát (nếu đã được duyệt)
+
+3. **Quản lý Course (Khóa học)**:
+   - Tạo khóa học mới với nhiều module và bài học
+   - Thêm tài liệu, video cho khóa học
+   - Chỉnh sửa khóa học
+   - Xem danh sách học viên đăng ký (nếu khóa học đã được duyệt)
+
+4. **Xem thông báo**:
+   - Nhận thông báo khi nội dung được duyệt hoặc từ chối
+   - Xem lý do từ chối (nếu có)
+
+## 7. Các tính năng chính của Manager
+
+1. **Quản lý Topic**:
+   - Tạo Topic mới
+   - Sửa, xóa Topic hiện có
+   - Xem danh sách Topic
+
+2. **Duyệt nội dung**:
+   - Xem danh sách nội dung chờ duyệt
+   - Duyệt hoặc từ chối nội dung
+   - Cung cấp lý do từ chối
+
+3. **Quản lý nhân sự**:
+   - Xem danh sách Staff và Consultant
+   - Xem thông tin chi tiết của từng người
+
+4. **Dashboard và báo cáo**:
+   - Xem thống kê tổng quan
+   - Tạo báo cáo theo thời gian (tuần, tháng, năm)
+   - Xuất báo cáo dưới dạng PDF hoặc Excel
+
+## 8. Sự khác biệt giữa Staff và Manager
+
+| Khía cạnh | Staff | Manager |
+|-----------|-------|---------|
+| **Vai trò chính** | Tạo nội dung | Kiểm duyệt nội dung |
+| **Quyền hạn** | Hạn chế (chỉ quản lý nội dung của mình) | Rộng hơn (quản lý nội dung của nhiều Staff) |
+| **Tạo Topic** | Không có quyền | Có quyền |
+| **Duyệt nội dung** | Không có quyền | Có quyền |
+| **Xem báo cáo** | Chỉ xem báo cáo liên quan đến nội dung của mình | Xem báo cáo toàn hệ thống |
+| **Quản lý người dùng** | Không có quyền | Có quyền xem thông tin Staff và Consultant |
+
+## 9. Lưu ý quan trọng
+
+1. **Quy trình kiểm duyệt**:
+   - Tất cả nội dung do Staff tạo ra đều phải qua Manager duyệt trước khi công khai
+   - Nội dung đã được duyệt không thể chỉnh sửa trực tiếp (cần tạo phiên bản mới)
+
+2. **Trạng thái nội dung**:
+   - **DRAFT**: Nháp, chỉ Staff tạo ra mới nhìn thấy
+   - **PENDING**: Đang chờ duyệt, Manager có thể nhìn thấy để duyệt
+   - **APPROVED**: Đã duyệt, công khai cho người dùng
+   - **REJECTED**: Bị từ chối, Staff cần chỉnh sửa
+
+3. **Thông báo**:
+   - Hệ thống tự động gửi thông báo khi trạng thái nội dung thay đổi
+   - Email thông báo được gửi song song với thông báo trong hệ thống
+
+Quy trình làm việc giữa Staff và Manager tạo nên một hệ thống kiểm soát chất lượng hiệu quả, đảm bảo người dùng cuối cùng chỉ tiếp cận với nội dung đã được kiểm duyệt và đạt chuẩn chất lượng.
