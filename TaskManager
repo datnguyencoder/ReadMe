@@ -1,0 +1,497 @@
+# Phân tích chi tiết chức năng Manager và đề xuất bổ sung
+
+Dựa trên yêu cầu của bạn, tôi sẽ phân tích chi tiết các chức năng hiện tại của Manager và đề xuất các chức năng cần bổ sung.
+
+## 1. Phân tích chức năng hiện tại
+
+### 1.1. Quản lý Topic (Chủ đề)
+- **Đã có**: 
+  - Thêm topic (`POST /api/manager/topic`)
+  - Sửa topic (`PATCH /api/manager/topic/{id}`)
+- **Còn thiếu**: 
+  - Xóa topic (API xóa chưa được triển khai trong `ManagerController`)
+  - API lấy danh sách topic (chưa có trong `ManagerController`)
+
+### 1.2. Quản lý nhân sự
+- **Đã có**:
+  - Xem danh sách staff (`GET /api/manager/staff`)
+  - Xem danh sách consultant (`GET /api/manager/consultants`)
+- **Còn thiếu**:
+  - API lọc và tìm kiếm staff/consultant theo các tiêu chí
+  - API xem chi tiết một staff/consultant cụ thể
+
+### 1.3. Dashboard
+- **Đã có**:
+  - API cơ bản cho dashboard (`GET /api/manager/dashboard`)
+- **Còn thiếu**:
+  - Dữ liệu thống kê thực tế (hiện tại chỉ trả về message chào mừng)
+  - Thống kê theo thời gian (tuần, tháng, năm)
+  - Thông tin về số lượng consultant, staff, số lượng ghi danh
+
+### 1.4. Báo cáo (Reports)
+- **Đã có**:
+  - API cơ bản cho báo cáo (`POST /api/manager/reports`)
+- **Còn thiếu**:
+  - Logic xử lý báo cáo thực tế
+  - API xuất báo cáo theo thời gian (tuần, tháng, năm)
+  - API xuất báo cáo theo định dạng (PDF, Excel)
+
+### 1.5. Duyệt nội dung
+- **Chưa có**:
+  - API duyệt bài viết (blog)
+  - API duyệt survey
+  - API duyệt khóa học
+
+## 2. Đề xuất chức năng cần bổ sung
+
+### 2.1. Quản lý Topic (Chủ đề)
+
+#### 2.1.1. API xóa Topic
+```java
+@DeleteMapping("/topic/{id}")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Map<String, String>> deleteTopic(@PathVariable Long id) {
+    topicService.delete(id);
+    return ResponseEntity.ok(Map.of("message", "Topic deleted successfully"));
+}
+```
+
+#### 2.1.2. API lấy danh sách Topic
+```java
+@GetMapping("/topics")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<List<TopicResponse>> getAllTopics() {
+    List<TopicResponse> topics = topicService.getAllTopics();
+    return ResponseEntity.ok(topics);
+}
+```
+
+### 2.2. Duyệt nội dung
+
+#### 2.2.1. API duyệt bài viết (Blog)
+```java
+@PatchMapping("/blog/{id}/approve")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Map<String, String>> approveBlog(
+        @PathVariable Long id,
+        @RequestParam ApprovalStatus status,
+        @RequestParam(required = false) String rejectionReason) {
+    blogService.updateApprovalStatus(id, status, rejectionReason);
+    return ResponseEntity.ok(Map.of(
+            "message", "Blog approval status updated successfully",
+            "status", status.toString()
+    ));
+}
+```
+
+#### 2.2.2. API duyệt khóa học (Course)
+```java
+@PatchMapping("/course/{id}/approve")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Map<String, String>> approveCourse(
+        @PathVariable Long id,
+        @RequestParam ApprovalStatus status,
+        @RequestParam(required = false) String rejectionReason) {
+    courseService.updateApprovalStatus(id, status, rejectionReason);
+    return ResponseEntity.ok(Map.of(
+            "message", "Course approval status updated successfully",
+            "status", status.toString()
+    ));
+}
+```
+
+#### 2.2.3. API duyệt khảo sát (Survey)
+```java
+@PatchMapping("/survey/{id}/approve")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Map<String, String>> approveSurvey(
+        @PathVariable Long id,
+        @RequestParam ApprovalStatus status,
+        @RequestParam(required = false) String rejectionReason) {
+    surveyService.updateApprovalStatus(id, status, rejectionReason);
+    return ResponseEntity.ok(Map.of(
+            "message", "Survey approval status updated successfully",
+            "status", status.toString()
+    ));
+}
+```
+
+### 2.3. Dashboard và Báo cáo nâng cao
+
+#### 2.3.1. API Dashboard với thống kê đầy đủ
+```java
+@GetMapping("/dashboard/stats")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<DashboardStatsResponse> getDashboardStats(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+        @RequestParam(required = false, defaultValue = "MONTH") TimeFrame timeFrame) {
+    
+    DashboardStatsResponse stats = dashboardService.getStats(startDate, endDate, timeFrame);
+    return ResponseEntity.ok(stats);
+}
+```
+
+Trong đó `DashboardStatsResponse` sẽ bao gồm:
+```java
+public class DashboardStatsResponse {
+    private long totalConsultants;
+    private long totalStaff;
+    private long totalUsers;
+    private long totalEnrollments;
+    private long totalAppointments;
+    private long completedAppointments;
+    private long canceledAppointments;
+    private Map<String, Long> enrollmentsByDate;
+    private Map<String, Long> appointmentsByDate;
+    // Thêm các thống kê khác...
+}
+```
+
+#### 2.3.2. API xuất báo cáo theo thời gian
+```java
+@GetMapping("/reports/export")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<?> exportReport(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+        @RequestParam(required = false, defaultValue = "MONTH") TimeFrame timeFrame,
+        @RequestParam(required = false, defaultValue = "PDF") ReportFormat format) {
+    
+    byte[] reportData = reportService.generateReport(startDate, endDate, timeFrame, format);
+    
+    String filename = "report_" + startDate + "_to_" + endDate + "." + format.toString().toLowerCase();
+    
+    return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .contentType(format == ReportFormat.PDF ? MediaType.APPLICATION_PDF : MediaType.APPLICATION_OCTET_STREAM)
+            .body(reportData);
+}
+```
+
+### 2.4. Quản lý nhân sự nâng cao
+
+#### 2.4.1. API tìm kiếm và lọc Staff
+```java
+@GetMapping("/staff/search")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Page<UserDetailResponse>> searchStaff(
+        @RequestParam(required = false) String keyword,
+        @RequestParam(required = false) String sortBy,
+        @RequestParam(required = false, defaultValue = "asc") String sortDir,
+        @RequestParam(required = false, defaultValue = "0") int page,
+        @RequestParam(required = false, defaultValue = "10") int size) {
+    
+    Page<UserDetailResponse> staffList = adminService.searchUsersByRole(
+            "ROLE_STAFF", keyword, sortBy, sortDir, page, size);
+    return ResponseEntity.ok(staffList);
+}
+```
+
+#### 2.4.2. API tìm kiếm và lọc Consultant
+```java
+@GetMapping("/consultants/search")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<Page<UserDetailResponse>> searchConsultants(
+        @RequestParam(required = false) String keyword,
+        @RequestParam(required = false) String sortBy,
+        @RequestParam(required = false, defaultValue = "asc") String sortDir,
+        @RequestParam(required = false, defaultValue = "0") int page,
+        @RequestParam(required = false, defaultValue = "10") int size) {
+    
+    Page<UserDetailResponse> consultantList = adminService.searchUsersByRole(
+            "ROLE_CONSULTANT", keyword, sortBy, sortDir, page, size);
+    return ResponseEntity.ok(consultantList);
+}
+```
+
+#### 2.4.3. API xem chi tiết Staff/Consultant
+```java
+@GetMapping("/user/{id}")
+@PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+public ResponseEntity<UserDetailResponse> getUserDetails(@PathVariable Long id) {
+    UserDetailResponse userDetail = adminService.getUserDetailById(id);
+    return ResponseEntity.ok(userDetail);
+}
+```
+
+## 3. Các Service cần bổ sung hoặc mở rộng
+
+### 3.1. DashboardService
+```java
+@Service
+@RequiredArgsConstructor
+public class DashboardService {
+    private final UserRepository userRepository;
+    private final CourseEnrollmentRepository enrollmentRepository;
+    private final AppointmentRepository appointmentRepository;
+    
+    public DashboardStatsResponse getStats(LocalDate startDate, LocalDate endDate, TimeFrame timeFrame) {
+        // Thiết lập thời gian mặc định nếu không có
+        if (startDate == null) {
+            startDate = LocalDate.now().minusMonths(1);
+        }
+        if (endDate == null) {
+            endDate = LocalDate.now();
+        }
+        
+        // Đếm số lượng người dùng theo vai trò
+        long totalConsultants = userRepository.countByRole(ERole.ROLE_CONSULTANT);
+        long totalStaff = userRepository.countByRole(ERole.ROLE_STAFF);
+        long totalUsers = userRepository.count();
+        
+        // Đếm số lượng ghi danh khóa học
+        long totalEnrollments = enrollmentRepository.countByEnrollmentDateBetween(startDate, endDate);
+        
+        // Đếm số lượng cuộc hẹn
+        long totalAppointments = appointmentRepository.countByAppointmentDateBetween(startDate, endDate);
+        long completedAppointments = appointmentRepository.countByStatusAndAppointmentDateBetween("COMPLETED", startDate, endDate);
+        long canceledAppointments = appointmentRepository.countByStatusAndAppointmentDateBetween("CANCELED", startDate, endDate);
+        
+        // Thống kê theo thời gian
+        Map<String, Long> enrollmentsByDate = getEnrollmentsByTimeFrame(startDate, endDate, timeFrame);
+        Map<String, Long> appointmentsByDate = getAppointmentsByTimeFrame(startDate, endDate, timeFrame);
+        
+        // Tạo response
+        DashboardStatsResponse response = new DashboardStatsResponse();
+        response.setTotalConsultants(totalConsultants);
+        response.setTotalStaff(totalStaff);
+        response.setTotalUsers(totalUsers);
+        response.setTotalEnrollments(totalEnrollments);
+        response.setTotalAppointments(totalAppointments);
+        response.setCompletedAppointments(completedAppointments);
+        response.setCanceledAppointments(canceledAppointments);
+        response.setEnrollmentsByDate(enrollmentsByDate);
+        response.setAppointmentsByDate(appointmentsByDate);
+        
+        return response;
+    }
+    
+    private Map<String, Long> getEnrollmentsByTimeFrame(LocalDate startDate, LocalDate endDate, TimeFrame timeFrame) {
+        // Logic phân chia theo tuần, tháng, năm
+        // ...
+        return enrollmentsByDate;
+    }
+    
+    private Map<String, Long> getAppointmentsByTimeFrame(LocalDate startDate, LocalDate endDate, TimeFrame timeFrame) {
+        // Logic phân chia theo tuần, tháng, năm
+        // ...
+        return appointmentsByDate;
+    }
+}
+```
+
+### 3.2. ReportService
+```java
+@Service
+@RequiredArgsConstructor
+public class ReportService {
+    private final DashboardService dashboardService;
+    
+    public byte[] generateReport(LocalDate startDate, LocalDate endDate, TimeFrame timeFrame, ReportFormat format) {
+        // Lấy dữ liệu thống kê
+        DashboardStatsResponse stats = dashboardService.getStats(startDate, endDate, timeFrame);
+        
+        // Tạo báo cáo theo định dạng
+        if (format == ReportFormat.PDF) {
+            return generatePdfReport(stats, startDate, endDate, timeFrame);
+        } else if (format == ReportFormat.EXCEL) {
+            return generateExcelReport(stats, startDate, endDate, timeFrame);
+        } else {
+            throw new IllegalArgumentException("Unsupported report format: " + format);
+        }
+    }
+    
+    private byte[] generatePdfReport(DashboardStatsResponse stats, LocalDate startDate, LocalDate endDate, TimeFrame timeFrame) {
+        // Logic tạo báo cáo PDF
+        // ...
+        return pdfData;
+    }
+    
+    private byte[] generateExcelReport(DashboardStatsResponse stats, LocalDate startDate, LocalDate endDate, TimeFrame timeFrame) {
+        // Logic tạo báo cáo Excel
+        // ...
+        return excelData;
+    }
+}
+```
+
+### 3.3. Mở rộng AdminService
+```java
+// Thêm các phương thức mới vào AdminService
+public Page<UserDetailResponse> searchUsersByRole(String roleName, String keyword, String sortBy, String sortDir, int page, int size) {
+    try {
+        ERole eRole = ERole.valueOf(roleName);
+        
+        // Tạo Pageable
+        Sort sort = Sort.by(sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, 
+                sortBy != null ? sortBy : "id");
+        Pageable pageable = PageRequest.of(page, size, sort);
+        
+        // Tìm kiếm người dùng
+        Page<User> users;
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            users = userRepository.findByRoleAndFullnameContainingOrEmailContaining(eRole, keyword, keyword, pageable);
+        } else {
+            users = userRepository.findByRole(eRole, pageable);
+        }
+        
+        // Chuyển đổi sang DTO
+        return users.map(this::mapToUserDetailResponse);
+    } catch (IllegalArgumentException e) {
+        log.error("Invalid role name: {}", roleName);
+        throw new IllegalArgumentException("Invalid role name: " + roleName);
+    }
+}
+
+public UserDetailResponse getUserDetailById(Long id) {
+    User user = userRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+    return mapToUserDetailResponse(user);
+}
+```
+
+### 3.4. Mở rộng các Service xử lý duyệt nội dung
+
+#### 3.4.1. BlogService
+```java
+public void updateApprovalStatus(Long id, ApprovalStatus status, String rejectionReason) {
+    Blog blog = blogRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Blog not found with id: " + id));
+    
+    blog.setStatus(status);
+    if (status == ApprovalStatus.REJECTED && rejectionReason != null) {
+        blog.setRejectionReason(rejectionReason);
+    }
+    
+    Blog updatedBlog = blogRepository.save(blog);
+    
+    // Gửi email thông báo cho người tạo
+    emailService.sendBlogStatusUpdateEmail(updatedBlog);
+}
+```
+
+#### 3.4.2. CourseService
+```java
+public void updateApprovalStatus(Long id, ApprovalStatus status, String rejectionReason) {
+    Course course = courseRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Course not found with id: " + id));
+    
+    course.setStatus(status);
+    if (status == ApprovalStatus.REJECTED && rejectionReason != null) {
+        course.setRejectionReason(rejectionReason);
+    }
+    
+    Course updatedCourse = courseRepository.save(course);
+    
+    // Gửi email thông báo cho người tạo
+    emailService.sendCourseStatusUpdateEmail(updatedCourse);
+}
+```
+
+#### 3.4.3. SurveyService
+```java
+public void updateApprovalStatus(Long id, ApprovalStatus status, String rejectionReason) {
+    Survey survey = surveyRepository.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Survey not found with id: " + id));
+    
+    survey.setStatus(status);
+    if (status == ApprovalStatus.REJECTED && rejectionReason != null) {
+        survey.setRejectionReason(rejectionReason);
+    }
+    
+    Survey updatedSurvey = surveyRepository.save(survey);
+    
+    // Gửi email thông báo cho người tạo
+    emailService.sendSurveyStatusUpdateEmail(updatedSurvey);
+}
+```
+
+## 4. Các Entity cần bổ sung hoặc mở rộng
+
+### 4.1. Enum ApprovalStatus
+```java
+public enum ApprovalStatus {
+    PENDING,
+    APPROVED,
+    REJECTED
+}
+```
+
+### 4.2. Enum TimeFrame
+```java
+public enum TimeFrame {
+    DAY,
+    WEEK,
+    MONTH,
+    YEAR
+}
+```
+
+### 4.3. Enum ReportFormat
+```java
+public enum ReportFormat {
+    PDF,
+    EXCEL
+}
+```
+
+### 4.4. Mở rộng các Entity hiện có
+
+#### 4.4.1. Blog Entity
+```java
+// Thêm các trường sau vào Blog entity
+@Enumerated(EnumType.STRING)
+private ApprovalStatus status = ApprovalStatus.PENDING;
+
+private String rejectionReason;
+```
+
+#### 4.4.2. Course Entity
+```java
+// Thêm các trường sau vào Course entity
+@Enumerated(EnumType.STRING)
+private ApprovalStatus status = ApprovalStatus.PENDING;
+
+private String rejectionReason;
+```
+
+#### 4.4.3. Survey Entity
+```java
+// Thêm các trường sau vào Survey entity
+@Enumerated(EnumType.STRING)
+private ApprovalStatus status = ApprovalStatus.PENDING;
+
+private String rejectionReason;
+```
+
+## 5. Tóm tắt các chức năng cần bổ sung
+
+1. **Quản lý Topic**:
+   - Bổ sung API xóa topic
+   - Bổ sung API lấy danh sách topic
+
+2. **Duyệt nội dung**:
+   - Bổ sung API duyệt bài viết (blog)
+   - Bổ sung API duyệt khóa học
+   - Bổ sung API duyệt khảo sát
+   - Thêm trường ApprovalStatus và rejectionReason vào các entity tương ứng
+
+3. **Dashboard và Báo cáo**:
+   - Tạo DashboardService để xử lý thống kê
+   - Tạo ReportService để xuất báo cáo
+   - Bổ sung API dashboard với thống kê đầy đủ
+   - Bổ sung API xuất báo cáo theo thời gian và định dạng
+
+4. **Quản lý nhân sự**:
+   - Bổ sung API tìm kiếm và lọc Staff
+   - Bổ sung API tìm kiếm và lọc Consultant
+   - Bổ sung API xem chi tiết Staff/Consultant
+   - Mở rộng AdminService để hỗ trợ các chức năng tìm kiếm và phân trang
+
+Với các bổ sung này, Manager sẽ có đầy đủ chức năng để:
+- Quản lý Topic (thêm, sửa, xóa)
+- Duyệt bài viết, survey, khóa học của staff gửi lên
+- Xem dashboard với đầy đủ thống kê
+- Xuất báo cáo theo tuần, tháng, năm
+- Xem và tìm kiếm danh sách staff và consultant với đầy đủ thông tin
