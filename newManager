@@ -1,0 +1,385 @@
+# Chi tiết logic luồng đi của các chức năng Manager
+
+## 1. Luồng quản lý Topic
+
+### 1.1. Thêm Topic mới
+
+**Luồng xử lý:**
+1. Manager đăng nhập vào hệ thống
+2. Manager truy cập trang quản lý Topic
+3. Manager nhập thông tin Topic mới (tên, mô tả)
+4. Frontend gửi request đến backend:
+   ```
+   POST /api/manager/topic
+   {
+     "name": "Tư vấn tâm lý",
+     "description": "Các vấn đề liên quan đến sức khỏe tâm lý"
+   }
+   ```
+5. `ManagerController` nhận request và chuyển đến `TopicService`
+6. `TopicService.create()` thực hiện:
+   - Lấy thông tin người dùng hiện tại (Manager) từ SecurityContext
+   - Kiểm tra tên Topic có bị trùng không
+   - Tạo đối tượng Topic mới với thông tin từ request
+   - Gán người tạo là Manager hiện tại
+   - Lưu Topic vào database
+   - Chuyển đổi thành TopicResponse và trả về
+7. Frontend nhận response và hiển thị thông báo thành công
+
+### 1.2. Sửa Topic
+
+**Luồng xử lý:**
+1. Manager xem danh sách Topic
+2. Manager chọn Topic cần sửa
+3. Manager nhập thông tin cần sửa
+4. Frontend gửi request đến backend:
+   ```
+   PATCH /api/manager/topic/123
+   {
+     "name": "Tư vấn sức khỏe tâm lý",
+     "description": "Cập nhật mô tả mới"
+   }
+   ```
+5. `ManagerController` nhận request và chuyển đến `TopicService`
+6. `TopicService.update()` thực hiện:
+   - Tìm Topic theo ID
+   - Kiểm tra Topic có tồn tại và đang active không
+   - Cập nhật thông tin mới
+   - Lưu vào database
+   - Chuyển đổi thành TopicResponse và trả về
+7. Frontend nhận response và hiển thị thông báo thành công
+
+### 1.3. Xóa Topic (cần bổ sung)
+
+**Luồng xử lý:**
+1. Manager xem danh sách Topic
+2. Manager chọn Topic cần xóa
+3. Manager xác nhận xóa
+4. Frontend gửi request đến backend:
+   ```
+   DELETE /api/manager/topic/123
+   ```
+5. `ManagerController` nhận request và chuyển đến `TopicService`
+6. `TopicService.delete()` thực hiện:
+   - Tìm Topic theo ID
+   - Kiểm tra Topic có tồn tại và đang active không
+   - Đánh dấu Topic là không active (soft delete)
+   - Lưu vào database
+7. Frontend nhận response và hiển thị thông báo thành công
+
+## 2. Luồng duyệt nội dung
+
+### 2.1. Duyệt bài viết (Blog)
+
+**Luồng xử lý:**
+1. Staff tạo bài viết mới và gửi lên hệ thống với trạng thái PENDING
+2. Manager đăng nhập vào hệ thống
+3. Manager truy cập trang quản lý bài viết chờ duyệt
+4. Manager xem danh sách bài viết với trạng thái PENDING
+5. Manager chọn một bài viết để xem chi tiết
+6. Manager quyết định duyệt hoặc từ chối bài viết:
+   - Nếu duyệt: Manager chọn "Approve"
+   - Nếu từ chối: Manager chọn "Reject" và nhập lý do từ chối
+7. Frontend gửi request đến backend:
+   ```
+   PATCH /api/manager/blog/456/approve
+   {
+     "status": "APPROVED"
+   }
+   ```
+   hoặc
+   ```
+   PATCH /api/manager/blog/456/approve
+   {
+     "status": "REJECTED",
+     "rejectionReason": "Nội dung chưa phù hợp, cần chỉnh sửa phần XYZ"
+   }
+   ```
+8. `ManagerController` nhận request và chuyển đến `BlogService`
+9. `BlogService.updateApprovalStatus()` thực hiện:
+   - Tìm Blog theo ID
+   - Cập nhật trạng thái (APPROVED hoặc REJECTED)
+   - Nếu REJECTED, lưu lý do từ chối
+   - Lưu vào database
+   - Gửi email thông báo cho người tạo bài viết
+10. Frontend nhận response và hiển thị thông báo thành công
+
+### 2.2. Duyệt khóa học (Course)
+
+**Luồng xử lý:**
+1. Staff tạo khóa học mới và gửi lên hệ thống với trạng thái PENDING
+2. Manager truy cập trang quản lý khóa học chờ duyệt
+3. Manager xem danh sách khóa học với trạng thái PENDING
+4. Manager chọn một khóa học để xem chi tiết
+5. Manager quyết định duyệt hoặc từ chối khóa học
+6. Frontend gửi request đến backend tương tự như duyệt bài viết
+7. `ManagerController` nhận request và chuyển đến `CourseService`
+8. `CourseService.updateApprovalStatus()` thực hiện:
+   - Tìm Course theo ID
+   - Cập nhật trạng thái
+   - Nếu REJECTED, lưu lý do từ chối
+   - Lưu vào database
+   - Gửi email thông báo cho người tạo khóa học
+9. Frontend nhận response và hiển thị thông báo thành công
+
+### 2.3. Duyệt khảo sát (Survey)
+
+**Luồng xử lý:**
+1. Staff tạo khảo sát mới và gửi lên hệ thống với trạng thái PENDING
+2. Manager truy cập trang quản lý khảo sát chờ duyệt
+3. Manager xem danh sách khảo sát với trạng thái PENDING
+4. Manager chọn một khảo sát để xem chi tiết
+5. Manager quyết định duyệt hoặc từ chối khảo sát
+6. Frontend gửi request đến backend tương tự như duyệt bài viết và khóa học
+7. `ManagerController` nhận request và chuyển đến `SurveyService`
+8. `SurveyService.updateApprovalStatus()` thực hiện:
+   - Tìm Survey theo ID
+   - Cập nhật trạng thái
+   - Nếu REJECTED, lưu lý do từ chối
+   - Lưu vào database
+   - Gửi email thông báo cho người tạo khảo sát
+9. Frontend nhận response và hiển thị thông báo thành công
+
+## 3. Luồng xem Dashboard và xuất báo cáo
+
+### 3.1. Xem Dashboard
+
+**Luồng xử lý:**
+1. Manager đăng nhập vào hệ thống
+2. Manager truy cập trang Dashboard
+3. Manager chọn khoảng thời gian cần xem (tuần, tháng, năm)
+4. Frontend gửi request đến backend:
+   ```
+   GET /api/manager/dashboard/stats?startDate=2023-01-01&endDate=2023-12-31&timeFrame=MONTH
+   ```
+5. `ManagerController` nhận request và chuyển đến `DashboardService`
+6. `DashboardService.getStats()` thực hiện:
+   - Thiết lập thời gian mặc định nếu không có
+   - Đếm số lượng người dùng theo vai trò (consultant, staff)
+   - Đếm số lượng ghi danh khóa học trong khoảng thời gian
+   - Đếm số lượng cuộc hẹn (tổng số, hoàn thành, hủy)
+   - Thống kê theo thời gian (ngày, tuần, tháng, năm)
+   - Tạo DashboardStatsResponse với các thông tin trên
+7. Frontend nhận response và hiển thị biểu đồ, số liệu thống kê
+
+### 3.2. Xuất báo cáo
+
+**Luồng xử lý:**
+1. Manager xem Dashboard
+2. Manager chọn "Xuất báo cáo"
+3. Manager chọn khoảng thời gian và định dạng báo cáo (PDF, Excel)
+4. Frontend gửi request đến backend:
+   ```
+   GET /api/manager/reports/export?startDate=2023-01-01&endDate=2023-12-31&timeFrame=MONTH&format=PDF
+   ```
+5. `ManagerController` nhận request và chuyển đến `ReportService`
+6. `ReportService.generateReport()` thực hiện:
+   - Lấy dữ liệu thống kê từ DashboardService
+   - Tạo báo cáo theo định dạng yêu cầu (PDF hoặc Excel)
+   - Trả về dữ liệu báo cáo dưới dạng byte array
+7. Frontend nhận response và tải xuống file báo cáo
+
+## 4. Luồng quản lý nhân sự
+
+### 4.1. Xem danh sách Staff
+
+**Luồng xử lý:**
+1. Manager đăng nhập vào hệ thống
+2. Manager truy cập trang quản lý Staff
+3. Frontend gửi request đến backend:
+   ```
+   GET /api/manager/staff
+   ```
+4. `ManagerController` nhận request và chuyển đến `AdminService`
+5. `AdminService.getUsersByRole("ROLE_STAFF")` thực hiện:
+   - Lấy danh sách User với role là STAFF
+   - Chuyển đổi thành UserDetailResponse và trả về
+6. Frontend nhận response và hiển thị danh sách Staff
+
+### 4.2. Tìm kiếm và lọc Staff
+
+**Luồng xử lý:**
+1. Manager truy cập trang quản lý Staff
+2. Manager nhập từ khóa tìm kiếm và chọn các bộ lọc
+3. Frontend gửi request đến backend:
+   ```
+   GET /api/manager/staff/search?keyword=Nguyễn&sortBy=fullname&sortDir=asc&page=0&size=10
+   ```
+4. `ManagerController` nhận request và chuyển đến `AdminService`
+5. `AdminService.searchUsersByRole()` thực hiện:
+   - Tạo Pageable với thông tin sắp xếp và phân trang
+   - Tìm kiếm User với role là STAFF và tên chứa từ khóa
+   - Chuyển đổi thành Page<UserDetailResponse> và trả về
+6. Frontend nhận response và hiển thị danh sách Staff phù hợp với tìm kiếm
+
+### 4.3. Xem danh sách Consultant
+
+**Luồng xử lý:**
+1. Manager truy cập trang quản lý Consultant
+2. Frontend gửi request đến backend:
+   ```
+   GET /api/manager/consultants
+   ```
+3. `ManagerController` nhận request và chuyển đến `AdminService`
+4. `AdminService.getUsersByRole("ROLE_CONSULTANT")` thực hiện:
+   - Lấy danh sách User với role là CONSULTANT
+   - Chuyển đổi thành UserDetailResponse và trả về
+5. Frontend nhận response và hiển thị danh sách Consultant
+
+### 4.4. Xem chi tiết Staff/Consultant
+
+**Luồng xử lý:**
+1. Manager xem danh sách Staff hoặc Consultant
+2. Manager chọn một người dùng để xem chi tiết
+3. Frontend gửi request đến backend:
+   ```
+   GET /api/manager/user/789
+   ```
+4. `ManagerController` nhận request và chuyển đến `AdminService`
+5. `AdminService.getUserDetailById()` thực hiện:
+   - Tìm User theo ID
+   - Chuyển đổi thành UserDetailResponse và trả về
+6. Frontend nhận response và hiển thị thông tin chi tiết của người dùng
+
+## 5. Luồng kết hợp giữa các chức năng
+
+### 5.1. Quản lý Topic và gán cho Consultant
+
+**Luồng xử lý:**
+1. Manager tạo Topic mới
+2. Manager truy cập trang chi tiết Consultant
+3. Manager chọn "Gán Topic" cho Consultant
+4. Manager chọn các Topic từ danh sách
+5. Frontend gửi request đến backend:
+   ```
+   POST /api/manager/consultant/789/topics
+   {
+     "topicIds": [123, 456]
+   }
+   ```
+6. `ManagerController` nhận request và chuyển đến service tương ứng
+7. Service thực hiện:
+   - Tìm Consultant theo ID
+   - Tìm các Topic theo danh sách ID
+   - Gán các Topic cho Consultant
+   - Lưu vào database
+8. Frontend nhận response và hiển thị thông báo thành công
+
+### 5.2. Duyệt nội dung và thông báo cho Staff
+
+**Luồng xử lý:**
+1. Manager duyệt một bài viết/khóa học/khảo sát
+2. Hệ thống gửi email thông báo cho Staff đã tạo nội dung
+3. Staff đăng nhập vào hệ thống
+4. Staff xem thông báo về trạng thái duyệt
+5. Nếu được duyệt:
+   - Nội dung được hiển thị công khai trên hệ thống
+6. Nếu bị từ chối:
+   - Staff xem lý do từ chối
+   - Staff chỉnh sửa nội dung
+   - Staff gửi lại để duyệt
+
+### 5.3. Xem Dashboard và tạo báo cáo cho Ban lãnh đạo
+
+**Luồng xử lý:**
+1. Manager xem Dashboard với các thống kê
+2. Manager phát hiện xu hướng hoặc vấn đề cần báo cáo
+3. Manager xuất báo cáo với khoảng thời gian phù hợp
+4. Manager gửi báo cáo cho Ban lãnh đạo
+5. Ban lãnh đạo xem báo cáo và đưa ra quyết định
+
+## 6. Sơ đồ luồng tổng thể
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Manager   │     │   Frontend  │     │   Backend   │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       │  Đăng nhập        │                   │
+       │ ─────────────────>│                   │
+       │                   │  Xác thực         │
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Token            │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Token            │                   │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Truy cập Dashboard                   │
+       │ ─────────────────>│                   │
+       │                   │  GET /dashboard/stats
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Thống kê         │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Hiển thị Dashboard                   │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Tạo Topic mới    │                   │
+       │ ─────────────────>│                   │
+       │                   │  POST /topic      │
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  TopicResponse    │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Thông báo thành công                 │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Xem nội dung chờ duyệt               │
+       │ ─────────────────>│                   │
+       │                   │  GET /pending-content
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Danh sách nội dung
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Hiển thị nội dung                    │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Duyệt nội dung   │                   │
+       │ ─────────────────>│                   │
+       │                   │  PATCH /approve   │
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Kết quả duyệt    │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Thông báo thành công                 │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Xuất báo cáo     │                   │
+       │ ─────────────────>│                   │
+       │                   │  GET /reports/export
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  File báo cáo     │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Tải xuống báo cáo                    │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+```
+
+## 7. Tóm tắt logic luồng đi
+
+1. **Quản lý Topic**:
+   - Manager tạo/sửa/xóa Topic
+   - Topic được lưu vào database
+   - Topic được gán cho Consultant để tư vấn
+
+2. **Duyệt nội dung**:
+   - Staff tạo nội dung với trạng thái PENDING
+   - Manager xem nội dung chờ duyệt
+   - Manager duyệt hoặc từ chối nội dung
+   - Hệ thống gửi thông báo cho Staff
+   - Nội dung được duyệt sẽ hiển thị công khai
+
+3. **Dashboard và báo cáo**:
+   - Manager xem thống kê trên Dashboard
+   - Manager chọn khoảng thời gian (tuần/tháng/năm)
+   - Hệ thống tính toán và hiển thị số liệu
+   - Manager xuất báo cáo theo định dạng mong muốn
+
+4. **Quản lý nhân sự**:
+   - Manager xem danh sách Staff/Consultant
+   - Manager tìm kiếm và lọc theo tiêu chí
+   - Manager xem chi tiết thông tin người dùng
+
+Các luồng này kết hợp với nhau tạo thành một hệ thống quản lý toàn diện, cho phép Manager giám sát và điều hành hiệu quả các hoạt động của hệ thống.
