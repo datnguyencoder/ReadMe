@@ -60,6 +60,70 @@
    DELETE /api/manager/topic/123
    ```
 5. `ManagerController` nhận request và chuyển đến `TopicService`
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Manager   │     │   Frontend  │     │   Backend   │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       │  Đăng nhập        │                   │
+       │ ─────────────────>│                   │
+       │                   │  Xác thực         │
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Token            │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Token            │                   │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Truy cập Dashboard                   │
+       │ ─────────────────>│                   │
+       │                   │  GET /dashboard/stats
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Thống kê         │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Hiển thị Dashboard                   │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Tạo Topic mới    │                   │
+       │ ─────────────────>│                   │
+       │                   │  POST /topic      │
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  TopicResponse    │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Thông báo thành công                 │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Xem nội dung chờ duyệt               │
+       │ ─────────────────>│                   │
+       │                   │  GET /pending-content
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Danh sách nội dung
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Hiển thị nội dung                    │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Duyệt nội dung   │                   │
+       │ ─────────────────>│                   │
+       │                   │  PATCH /approve   │
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  Kết quả duyệt    │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Thông báo thành công                 │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
+       │  Xuất báo cáo     │                   │
+       │ ─────────────────>│                   │
+       │                   │  GET /reports/export
+       │                   │ ─────────────────>│
+       │                   │                   │
+       │                   │  File báo cáo     │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │  Tải xuống báo cáo                    │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │
 6. `TopicService.delete()` thực hiện:
    - Tìm Topic theo ID
    - Kiểm tra Topic có tồn tại và đang active không
