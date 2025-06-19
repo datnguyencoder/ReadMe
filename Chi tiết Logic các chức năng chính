@@ -1,0 +1,143 @@
+# Chi tiết Logic các chức năng chính
+
+## 1. Login (Đăng nhập)
+
+**Logic xử lý:**
+1. `AuthenticationController.java` nhận request login từ client
+2. Gọi `authenticationService.login(request)`
+3. `AuthenticationService` sử dụng `AuthenticationManager` để xác thực
+4. Nếu xác thực thành công:
+   - Tạo access token bằng `jwtService.generateAccessToken(user)`
+   - Tạo refresh token bằng `jwtService.generateRefreshToken(user)`
+   - Trả về cả hai token cho client
+5. Nếu xác thực thất bại, ném `BadCredentialsException`
+
+**Luồng dữ liệu:**
+```
+Client -> LoginRequest -> AuthenticationController -> AuthenticationService -> 
+AuthenticationManager -> UserDetailsService -> Database -> 
+JwtService (tạo token) -> LoginResponse -> Client
+```
+
+## 2. Register (Đăng ký)
+
+**Logic xử lý:**
+1. `AuthenticationController.java` nhận request đăng ký từ client
+2. Gọi `userService.createUser(request)`
+3. `UserService` kiểm tra username/email đã tồn tại chưa
+4. Mã hóa mật khẩu với `passwordEncoder`
+5. Tạo đối tượng `User` mới và lưu vào database
+6. Gửi email chào mừng qua `EmailService` (nếu có)
+7. Trả về `RegisterResponse` cho client
+
+**Luồng dữ liệu:**
+```
+Client -> RegisterRequest -> AuthenticationController -> UserService -> 
+PasswordEncoder -> UserRepository -> Database -> 
+EmailService -> RegisterResponse -> Client
+```
+
+## 3. Logout (Đăng xuất)
+
+**Logic xử lý:**
+1. `AuthenticationController.java` nhận request logout với token
+2. Gọi `authenticationService.logout(request)`
+3. Parse JWT token để xác thực và lấy thông tin
+4. Tạo đối tượng `InvalidatedToken` với:
+   - JWT ID (jti) làm khóa chính
+   - Token gốc
+   - Thời gian hết hạn
+5. Lưu vào `InvalidatedTokenRepository`
+6. Trả về thông báo thành công
+
+**Cơ chế vô hiệu hóa token:**
+- Mỗi khi có request API, `JwtService.verifyToken()` kiểm tra:
+  - Token có hợp lệ về mặt kỹ thuật
+  - Token có trong danh sách vô hiệu hóa không
+  - Token có hết hạn không
+- Nếu token trong danh sách vô hiệu hóa, từ chối truy cập
+
+## 4. Admin Management
+
+**Logic xử lý:**
+1. `AdminController.java` xử lý các request quản trị
+2. Các endpoint được bảo vệ bởi `SecurityConfig` với quyền `ROLE_ADMIN`
+3. `AdminService` xử lý logic nghiệp vụ quản trị
+4. Truy vấn và cập nhật dữ liệu qua các Repository tương ứng
+
+**Phân quyền:**
+```java
+// Từ SecurityConfig.java
+.requestMatchers(ADMIN_ENDPOINTS).hasAuthority("ROLE_ADMIN")
+```
+
+## 5. Consultant Management (Quản lý tư vấn viên)
+
+**Logic xử lý:**
+1. `ConsultantController.java` xử lý các request liên quan tư vấn viên
+2. Một số endpoint công khai cho người dùng tìm kiếm tư vấn viên
+3. Các endpoint quản lý tư vấn viên yêu cầu quyền ADMIN hoặc MANAGER
+4. `ConsultantRepository` truy vấn dữ liệu tư vấn viên từ database
+5. Entity `Consultant` liên kết với `User` và `Topic` để quản lý chuyên môn
+
+**Quan hệ dữ liệu:**
+- Mỗi `Consultant` liên kết với một `User`
+- Mỗi `Consultant` có thể có nhiều `Topic` (chủ đề tư vấn)
+
+## 6. Appointment Management (Quản lý đặt lịch)
+
+**Logic xử lý:**
+1. `AppointmentController.java` xử lý các request đặt lịch
+2. Người dùng có thể xem các slot trống qua `SlotController` (endpoint công khai)
+3. Đặt lịch:
+   - Kiểm tra slot còn trống không
+   - Tạo appointment mới với trạng thái PENDING
+   - Gửi email xác nhận qua `EmailService`
+4. Tư vấn viên xác nhận/từ chối lịch hẹn
+5. Gửi email thông báo trạng thái cho người đặt
+
+**Luồng đặt lịch:**
+```
+Client -> AppointmentRequestDto -> AppointmentController -> AppointmentService -> 
+SlotRepository (kiểm tra) -> AppointmentRepository (lưu) -> 
+EmailService (gửi thông báo) -> AppointmentResponseDto -> Client
+```
+
+**Trạng thái lịch hẹn (ApprovalStatus):**
+- PENDING: Chờ xác nhận
+- APPROVED: Đã xác nhận
+- REJECTED: Đã từ chối
+- CANCELED: Đã hủy
+
+## 7. Slot Management (Quản lý khung giờ)
+
+**Logic xử lý:**
+1. `SlotController.java` xử lý các request liên quan đến khung giờ
+2. Tư vấn viên tạo các slot (khung giờ) có sẵn
+3. `SlotService` quản lý logic tạo, cập nhật, xóa slot
+4. Người dùng có thể xem các slot trống qua endpoint công khai
+5. Khi đặt lịch, slot sẽ được đánh dấu là đã đặt
+
+**Quan hệ dữ liệu:**
+- Mỗi `Slot` thuộc về một `Consultant`
+- Mỗi `Slot` có thể liên kết với một `Appointment`
+
+## 8. Cơ chế bảo mật tổng thể
+
+**Xác thực:**
+- Sử dụng JWT (JSON Web Token)
+- Access token có thời hạn ngắn (30 phút)
+- Refresh token có thời hạn dài (14 ngày)
+- Token vô hiệu hóa được lưu trong database
+
+**Phân quyền:**
+- Sử dụng Spring Security với `@EnableMethodSecurity`
+- Các role: ADMIN, MANAGER, CONSULTANT, USER
+- Phân quyền theo URL pattern và method annotation
+
+**Bảo mật API:**
+- CORS được cấu hình chỉ cho phép domain cụ thể
+- CSRF được vô hiệu hóa (vì sử dụng JWT)
+- Session là STATELESS
+- Các endpoint nhạy cảm được bảo vệ bởi role
+
