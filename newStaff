@@ -1,0 +1,648 @@
+# Phân tích chi tiết và luồng đi của Staff
+
+## 1. Mô hình dữ liệu cần thiết
+
+Trước khi đi vào chi tiết luồng, cần đảm bảo các entity có các trường cần thiết:
+
+### 1.1. Entity Blog
+```java
+@Entity
+public class Blog {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String title;
+    
+    @Column(columnDefinition = "TEXT")
+    private String content;
+    
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "topic_id")
+    private Topic topic;
+    
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "creator_id", nullable = false)
+    private User creator;
+    
+    @Enumerated(EnumType.STRING)
+    private ApprovalStatus status = ApprovalStatus.PENDING;
+    
+    private String rejectionReason;
+    
+    @CreationTimestamp
+    private LocalDateTime createdAt;
+    
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
+    
+    // Các trường khác và getter/setter
+}
+```
+
+### 1.2. Entity Survey
+```java
+@Entity
+public class Survey {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String title;
+    
+    @Column(length = 10000)
+    private String description;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_id", nullable = false)
+    private User createdBy;
+    
+    @Enumerated(EnumType.STRING)
+    private ApprovalStatus status = ApprovalStatus.PENDING;
+    
+    private String rejectionReason;
+    
+    @CreationTimestamp
+    private LocalDateTime createdAt;
+    
+    // Các trường khác và getter/setter
+}
+```
+
+### 1.3. Entity Course
+```java
+@Entity
+public class Course {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String title;
+    
+    @Column(columnDefinition = "TEXT")
+    private String description;
+    
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "topic_id")
+    private Topic topic;
+    
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "creator_id", nullable = false)
+    private User creator;
+    
+    @Enumerated(EnumType.STRING)
+    private ApprovalStatus status = ApprovalStatus.PENDING;
+    
+    private String rejectionReason;
+    
+    @CreationTimestamp
+    private LocalDateTime createdAt;
+    
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
+    
+    // Các trường khác và getter/setter
+}
+```
+
+### 1.4. Enum ApprovalStatus
+```java
+public enum ApprovalStatus {
+    PENDING,    // Chờ duyệt
+    APPROVED,   // Đã duyệt
+    REJECTED,   // Đã từ chối
+    DRAFT       // Bản nháp (chưa gửi duyệt)
+}
+```
+
+## 2. Luồng tạo và quản lý Blog
+
+### 2.1. Tạo Blog mới
+
+**Luồng xử lý:**
+1. Staff đăng nhập vào hệ thống
+2. Staff truy cập trang "Quản lý Blog"
+3. Staff chọn "Tạo Blog mới"
+4. Staff nhập thông tin Blog:
+   - Tiêu đề
+   - Nội dung (sử dụng rich text editor)
+   - Chọn Topic liên quan
+   - Tải lên hình ảnh (nếu có)
+5. Staff có hai lựa chọn:
+   - Lưu nháp (status = DRAFT)
+   - Gửi duyệt (status = PENDING)
+6. Frontend gửi request đến backend:
+   ```
+   POST /api/staff/blogs
+   {
+     "title": "Tiêu đề blog",
+     "content": "Nội dung blog...",
+     "topicId": 123,
+     "status": "PENDING",
+     "images": [...]
+   }
+   ```
+7. `StaffController` nhận request và chuyển đến `BlogService`
+8. `BlogService.createBlog()` thực hiện:
+   - Lấy thông tin người dùng hiện tại (Staff) từ SecurityContext
+   - Tìm Topic theo ID
+   - Tạo đối tượng Blog mới với thông tin từ request
+   - Gán người tạo là Staff hiện tại
+   - Thiết lập trạng thái (DRAFT hoặc PENDING)
+   - Lưu Blog vào database
+   - Nếu status là PENDING, gửi thông báo cho Manager về Blog mới cần duyệt
+   - Chuyển đổi thành BlogResponse và trả về
+9. Frontend nhận response và hiển thị thông báo thành công
+
+### 2.2. Chỉnh sửa Blog
+
+**Luồng xử lý:**
+1. Staff truy cập trang "Quản lý Blog"
+2. Staff xem danh sách Blog của mình
+3. Staff chọn Blog cần chỉnh sửa (chỉ có thể chỉnh sửa Blog có trạng thái DRAFT hoặc REJECTED)
+4. Staff thay đổi thông tin Blog
+5. Staff có hai lựa chọn:
+   - Lưu nháp (status = DRAFT)
+   - Gửi duyệt (status = PENDING)
+6. Frontend gửi request đến backend:
+   ```
+   PUT /api/staff/blogs/456
+   {
+     "title": "Tiêu đề blog đã sửa",
+     "content": "Nội dung blog đã sửa...",
+     "topicId": 123,
+     "status": "PENDING"
+   }
+   ```
+7. `StaffController` nhận request và chuyển đến `BlogService`
+8. `BlogService.updateBlog()` thực hiện:
+   - Tìm Blog theo ID
+   - Kiểm tra Blog có thuộc về Staff hiện tại không
+   - Kiểm tra trạng thái Blog có phải là DRAFT hoặc REJECTED không
+   - Cập nhật thông tin mới
+   - Thiết lập trạng thái mới (DRAFT hoặc PENDING)
+   - Lưu vào database
+   - Nếu status chuyển từ DRAFT/REJECTED sang PENDING, gửi thông báo cho Manager
+   - Chuyển đổi thành BlogResponse và trả về
+9. Frontend nhận response và hiển thị thông báo thành công
+
+### 2.3. Xem danh sách Blog
+
+**Luồng xử lý:**
+1. Staff truy cập trang "Quản lý Blog"
+2. Staff có thể chọn xem:
+   - Blog của tôi (chỉ hiển thị Blog do Staff đó tạo)
+   - Tất cả Blog (hiển thị tất cả Blog trong hệ thống)
+3. Staff có thể lọc theo:
+   - Trạng thái (DRAFT, PENDING, APPROVED, REJECTED)
+   - Topic
+   - Thời gian tạo
+4. Frontend gửi request đến backend:
+   ```
+   GET /api/staff/blogs?createdBy=me&status=PENDING&topicId=123
+   ```
+   hoặc
+   ```
+   GET /api/staff/blogs?status=APPROVED
+   ```
+5. `StaffController` nhận request và chuyển đến `BlogService`
+6. `BlogService.getBlogs()` thực hiện:
+   - Tạo Pageable với thông tin sắp xếp và phân trang
+   - Nếu createdBy=me, lọc theo Staff hiện tại
+   - Lọc theo các tiêu chí khác (status, topicId, v.v.)
+   - Trả về danh sách Blog phù hợp
+7. Frontend nhận response và hiển thị danh sách Blog
+
+### 2.4. Xem chi tiết Blog và trạng thái duyệt
+
+**Luồng xử lý:**
+1. Staff xem danh sách Blog
+2. Staff chọn một Blog để xem chi tiết
+3. Frontend gửi request đến backend:
+   ```
+   GET /api/staff/blogs/456
+   ```
+4. `StaffController` nhận request và chuyển đến `BlogService`
+5. `BlogService.getBlogById()` thực hiện:
+   - Tìm Blog theo ID
+   - Chuyển đổi thành BlogDetailResponse (bao gồm thông tin về trạng thái duyệt)
+   - Nếu status là REJECTED, kèm theo lý do từ chối
+6. Frontend nhận response và hiển thị chi tiết Blog, bao gồm:
+   - Nội dung Blog
+   - Trạng thái duyệt
+   - Lý do từ chối (nếu có)
+   - Lịch sử chỉnh sửa
+
+## 3. Luồng tạo và quản lý Survey
+
+### 3.1. Tạo Survey mới
+
+**Luồng xử lý:**
+1. Staff đăng nhập vào hệ thống
+2. Staff truy cập trang "Quản lý Survey"
+3. Staff chọn "Tạo Survey mới"
+4. Staff nhập thông tin Survey:
+   - Tiêu đề
+   - Mô tả
+   - Tạo các section và câu hỏi
+   - Tải lên hình ảnh (nếu có)
+5. Staff có hai lựa chọn:
+   - Lưu nháp (status = DRAFT)
+   - Gửi duyệt (status = PENDING)
+6. Frontend gửi request đến backend:
+   ```
+   POST /api/staff/surveys
+   {
+     "title": "Khảo sát về sức khỏe tâm lý",
+     "description": "Mô tả khảo sát...",
+     "sections": [...],
+     "status": "PENDING",
+     "surveyImage": "base64-encoded-image"
+   }
+   ```
+7. `StaffController` nhận request và chuyển đến `SurveyService`
+8. `SurveyService.createSurvey()` thực hiện:
+   - Lấy thông tin người dùng hiện tại (Staff) từ SecurityContext
+   - Tạo đối tượng Survey mới với thông tin từ request
+   - Gán người tạo là Staff hiện tại
+   - Thiết lập trạng thái (DRAFT hoặc PENDING)
+   - Lưu Survey vào database
+   - Nếu status là PENDING, gửi thông báo cho Manager về Survey mới cần duyệt
+   - Chuyển đổi thành SurveyResponse và trả về
+9. Frontend nhận response và hiển thị thông báo thành công
+
+### 3.2. Chỉnh sửa Survey
+
+**Luồng xử lý:**
+1. Staff truy cập trang "Quản lý Survey"
+2. Staff xem danh sách Survey của mình
+3. Staff chọn Survey cần chỉnh sửa (chỉ có thể chỉnh sửa Survey có trạng thái DRAFT hoặc REJECTED)
+4. Staff thay đổi thông tin Survey
+5. Staff có hai lựa chọn:
+   - Lưu nháp (status = DRAFT)
+   - Gửi duyệt (status = PENDING)
+6. Frontend gửi request đến backend:
+   ```
+   PUT /api/staff/surveys/789
+   {
+     "title": "Khảo sát về sức khỏe tâm lý (đã sửa)",
+     "description": "Mô tả khảo sát đã sửa...",
+     "sections": [...],
+     "status": "PENDING"
+   }
+   ```
+7. `StaffController` nhận request và chuyển đến `SurveyService`
+8. `SurveyService.updateSurvey()` thực hiện:
+   - Tìm Survey theo ID
+   - Kiểm tra Survey có thuộc về Staff hiện tại không
+   - Kiểm tra trạng thái Survey có phải là DRAFT hoặc REJECTED không
+   - Cập nhật thông tin mới
+   - Thiết lập trạng thái mới (DRAFT hoặc PENDING)
+   - Lưu vào database
+   - Nếu status chuyển từ DRAFT/REJECTED sang PENDING, gửi thông báo cho Manager
+   - Chuyển đổi thành SurveyResponse và trả về
+9. Frontend nhận response và hiển thị thông báo thành công
+
+### 3.3. Xem danh sách Survey
+
+**Luồng xử lý:**
+1. Staff truy cập trang "Quản lý Survey"
+2. Staff có thể chọn xem:
+   - Survey của tôi (chỉ hiển thị Survey do Staff đó tạo)
+   - Tất cả Survey (hiển thị tất cả Survey trong hệ thống)
+3. Staff có thể lọc theo:
+   - Trạng thái (DRAFT, PENDING, APPROVED, REJECTED)
+   - Thời gian tạo
+4. Frontend gửi request đến backend:
+   ```
+   GET /api/staff/surveys?createdBy=me&status=PENDING
+   ```
+   hoặc
+   ```
+   GET /api/staff/surveys?status=APPROVED
+   ```
+5. `StaffController` nhận request và chuyển đến `SurveyService`
+6. `SurveyService.getSurveys()` thực hiện:
+   - Tạo Pageable với thông tin sắp xếp và phân trang
+   - Nếu createdBy=me, lọc theo Staff hiện tại
+   - Lọc theo các tiêu chí khác (status, v.v.)
+   - Trả về danh sách Survey phù hợp
+7. Frontend nhận response và hiển thị danh sách Survey
+
+## 4. Luồng tạo và quản lý Course (Khóa học)
+
+### 4.1. Tạo Course mới
+
+**Luồng xử lý:**
+1. Staff đăng nhập vào hệ thống
+2. Staff truy cập trang "Quản lý Khóa học"
+3. Staff chọn "Tạo Khóa học mới"
+4. Staff nhập thông tin Khóa học:
+   - Tiêu đề
+   - Mô tả
+   - Chọn Topic liên quan
+   - Tải lên hình ảnh thumbnail
+   - Tạo các module và bài học
+5. Staff có hai lựa chọn:
+   - Lưu nháp (status = DRAFT)
+   - Gửi duyệt (status = PENDING)
+6. Frontend gửi request đến backend:
+   ```
+   POST /api/staff/courses
+   {
+     "title": "Khóa học về sức khỏe tâm lý",
+     "description": "Mô tả khóa học...",
+     "topicId": 123,
+     "modules": [...],
+     "status": "PENDING",
+     "thumbnail": "base64-encoded-image"
+   }
+   ```
+7. `StaffController` nhận request và chuyển đến `CourseService`
+8. `CourseService.createCourse()` thực hiện:
+   - Lấy thông tin người dùng hiện tại (Staff) từ SecurityContext
+   - Tìm Topic theo ID
+   - Tạo đối tượng Course mới với thông tin từ request
+   - Gán người tạo là Staff hiện tại
+   - Thiết lập trạng thái (DRAFT hoặc PENDING)
+   - Lưu Course vào database
+   - Nếu status là PENDING, gửi thông báo cho Manager về Course mới cần duyệt
+   - Chuyển đổi thành CourseResponse và trả về
+9. Frontend nhận response và hiển thị thông báo thành công
+
+### 4.2. Chỉnh sửa Course
+
+**Luồng xử lý:**
+1. Staff truy cập trang "Quản lý Khóa học"
+2. Staff xem danh sách Khóa học của mình
+3. Staff chọn Khóa học cần chỉnh sửa (chỉ có thể chỉnh sửa Khóa học có trạng thái DRAFT hoặc REJECTED)
+4. Staff thay đổi thông tin Khóa học
+5. Staff có hai lựa chọn:
+   - Lưu nháp (status = DRAFT)
+   - Gửi duyệt (status = PENDING)
+6. Frontend gửi request đến backend:
+   ```
+   PUT /api/staff/courses/101
+   {
+     "title": "Khóa học về sức khỏe tâm lý (đã sửa)",
+     "description": "Mô tả khóa học đã sửa...",
+     "topicId": 123,
+     "modules": [...],
+     "status": "PENDING"
+   }
+   ```
+7. `StaffController` nhận request và chuyển đến `CourseService`
+8. `CourseService.updateCourse()` thực hiện:
+   - Tìm Course theo ID
+   - Kiểm tra Course có thuộc về Staff hiện tại không
+   - Kiểm tra trạng thái Course có phải là DRAFT hoặc REJECTED không
+   - Cập nhật thông tin mới
+   - Thiết lập trạng thái mới (DRAFT hoặc PENDING)
+   - Lưu vào database
+   - Nếu status chuyển từ DRAFT/REJECTED sang PENDING, gửi thông báo cho Manager
+   - Chuyển đổi thành CourseResponse và trả về
+9. Frontend nhận response và hiển thị thông báo thành công
+
+### 4.3. Xem danh sách Course
+
+**Luồng xử lý:**
+1. Staff truy cập trang "Quản lý Khóa học"
+2. Staff có thể chọn xem:
+   - Khóa học của tôi (chỉ hiển thị Khóa học do Staff đó tạo)
+   - Tất cả Khóa học (hiển thị tất cả Khóa học trong hệ thống)
+3. Staff có thể lọc theo:
+   - Trạng thái (DRAFT, PENDING, APPROVED, REJECTED)
+   - Topic
+   - Thời gian tạo
+4. Frontend gửi request đến backend:
+   ```
+   GET /api/staff/courses?createdBy=me&status=PENDING&topicId=123
+   ```
+   hoặc
+   ```
+   GET /api/staff/courses?status=APPROVED
+   ```
+5. `StaffController` nhận request và chuyển đến `CourseService`
+6. `CourseService.getCourses()` thực hiện:
+   - Tạo Pageable với thông tin sắp xếp và phân trang
+   - Nếu createdBy=me, lọc theo Staff hiện tại
+   - Lọc theo các tiêu chí khác (status, topicId, v.v.)
+   - Trả về danh sách Course phù hợp
+7. Frontend nhận response và hiển thị danh sách Course
+
+## 5. Luồng nhận thông báo và phản hồi từ Manager
+
+### 5.1. Nhận thông báo về trạng thái duyệt
+
+**Luồng xử lý:**
+1. Manager duyệt hoặc từ chối một nội dung (Blog, Survey, Course)
+2. Hệ thống gửi email thông báo cho Staff đã tạo nội dung
+3. Hệ thống cũng tạo thông báo trong hệ thống
+4. Staff đăng nhập vào hệ thống
+5. Staff xem thông báo mới
+6. Frontend gửi request đến backend:
+   ```
+   GET /api/staff/notifications
+   ```
+7. `StaffController` nhận request và chuyển đến `NotificationService`
+8. `NotificationService.getNotifications()` thực hiện:
+   - Lấy danh sách thông báo của Staff hiện tại
+   - Sắp xếp theo thời gian (mới nhất trước)
+   - Trả về danh sách thông báo
+9. Frontend hiển thị danh sách thông báo cho Staff
+
+### 5.2. Xử lý nội dung bị từ chối
+
+**Luồng xử lý:**
+1. Staff nhận thông báo về nội dung bị từ chối
+2. Staff xem chi tiết nội dung và lý do từ chối
+3. Staff chỉnh sửa nội dung theo góp ý của Manager
+4. Staff gửi lại nội dung để duyệt (chuyển trạng thái từ REJECTED sang PENDING)
+5. Quá trình duyệt lặp lại từ đầu
+
+## 6. Các API cần thiết cho Staff
+
+### 6.1. API quản lý Blog
+
+```java
+@RestController
+@RequestMapping("/api/staff/blogs")
+@PreAuthorize("hasAuthority('ROLE_STAFF')")
+public class StaffBlogController {
+    
+    @PostMapping
+    public ResponseEntity<BlogResponse> createBlog(@Valid @RequestBody BlogCreateRequest request) {
+        // Tạo blog mới
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<BlogResponse> updateBlog(@PathVariable Long id, @Valid @RequestBody BlogUpdateRequest request) {
+        // Cập nhật blog
+    }
+    
+    @GetMapping
+    public ResponseEntity<Page<BlogSummaryResponse>> getBlogs(
+            @RequestParam(required = false) String createdBy,
+            @RequestParam(required = false) ApprovalStatus status,
+            @RequestParam(required = false) Long topicId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        // Lấy danh sách blog
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<BlogDetailResponse> getBlogById(@PathVariable Long id) {
+        // Lấy chi tiết blog
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteBlog(@PathVariable Long id) {
+        // Xóa blog (chỉ xóa được blog ở trạng thái DRAFT)
+    }
+}
+```
+
+### 6.2. API quản lý Survey
+
+```java
+@RestController
+@RequestMapping("/api/staff/surveys")
+@PreAuthorize("hasAuthority('ROLE_STAFF')")
+public class StaffSurveyController {
+    
+    @PostMapping
+    public ResponseEntity<SurveyResponse> createSurvey(@Valid @ModelAttribute SurveyCreateRequest request) {
+        // Tạo survey mới
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<SurveyResponse> updateSurvey(@PathVariable Long id, @Valid @ModelAttribute SurveyUpdateRequest request) {
+        // Cập nhật survey
+    }
+    
+    @GetMapping
+    public ResponseEntity<Page<SurveySummaryResponse>> getSurveys(
+            @RequestParam(required = false) String createdBy,
+            @RequestParam(required = false) ApprovalStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        // Lấy danh sách survey
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<SurveyDetailResponse> getSurveyById(@PathVariable Long id) {
+        // Lấy chi tiết survey
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteSurvey(@PathVariable Long id) {
+        // Xóa survey (chỉ xóa được survey ở trạng thái DRAFT)
+    }
+}
+```
+
+### 6.3. API quản lý Course
+
+```java
+@RestController
+@RequestMapping("/api/staff/courses")
+@PreAuthorize("hasAuthority('ROLE_STAFF')")
+public class StaffCourseController {
+    
+    @PostMapping
+    public ResponseEntity<CourseResponse> createCourse(@Valid @ModelAttribute CourseCreateRequest request) {
+        // Tạo course mới
+    }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<CourseResponse> updateCourse(@PathVariable Long id, @Valid @ModelAttribute CourseUpdateRequest request) {
+        // Cập nhật course
+    }
+    
+    @GetMapping
+    public ResponseEntity<Page<CourseSummaryResponse>> getCourses(
+            @RequestParam(required = false) String createdBy,
+            @RequestParam(required = false) ApprovalStatus status,
+            @RequestParam(required = false) Long topicId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        // Lấy danh sách course
+    }
+    
+    @GetMapping("/{id}")
+    public ResponseEntity<CourseDetailResponse> getCourseById(@PathVariable Long id) {
+        // Lấy chi tiết course
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteCourse(@PathVariable Long id) {
+        // Xóa course (chỉ xóa được course ở trạng thái DRAFT)
+    }
+}
+```
+
+### 6.4. API xem thông báo
+
+```java
+@RestController
+@RequestMapping("/api/staff/notifications")
+@PreAuthorize("hasAuthority('ROLE_STAFF')")
+public class StaffNotificationController {
+    
+    @GetMapping
+    public ResponseEntity<Page<NotificationResponse>> getNotifications(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        // Lấy danh sách thông báo
+    }
+    
+    @PatchMapping("/{id}/read")
+    public ResponseEntity<Void> markAsRead(@PathVariable Long id) {
+        // Đánh dấu thông báo đã đọc
+    }
+}
+```
+
+## 7. Sơ đồ luồng tổng thể của Staff
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│    Staff    │     │   Frontend  │     │   Backend   │     │   Manager   │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │                   │
+       │  Đăng nhập        │                   │                   │
+       │ ─────────────────>│                   │                   │
+       │                   │  Xác thực         │                   │
+       │                   │ ─────────────────>│                   │
+       │                   │                   │                   │
+       │                   │  Token            │                   │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │  Token            │                   │                   │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │                   │
+       │                   │                   │                   │
+       │  Tạo nội dung mới │                   │                   │
+       │ ─────────────────>│                   │                   │
+       │                   │  POST /api/staff/blogs                │
+       │                   │ ─────────────────>│                   │
+       │                   │                   │                   │
+       │                   │  BlogResponse     │                   │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │  Thông báo thành công                 │                   │
+       │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │                   │
+       │                   │                   │                   │
+       │                   │                   │  Thông báo có nội dung mới
+       │                   │                   │ ─────────────────>│
+       │                   │                   │                   │
+       │                   │                   │                   │
+       │                   │                   │  Duyệt nội dung   │
+       │                   │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │
+       │                   │                   │                   │
+       │                   │  Thông báo kết quả duyệt              │
+       │                   │<─ ─ ─ ─ ─ ─ ─ ─ ─ │                   │
+       │                   │                   │                   │
+       │  Xem thông báo    │                   │                   │
+       │ ─────────────────>│                   │                   │
+       │                   │  GET /api/staff/notifications         │
+       │                   │ ─────────────────>│                   │
+       │                   │                   │                   │
+       │                   │  Danh sách thông báo
