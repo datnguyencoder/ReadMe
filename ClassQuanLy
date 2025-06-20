@@ -1,0 +1,1169 @@
+# Phân tích chi tiết các luồng và class trong project
+
+Dựa trên mã nguồn của dự án, tôi sẽ phân tích chi tiết các luồng và class liên quan đến Manager, Slot, Appointment và Consultant.
+
+## I. Class và Entity
+
+### 1. Manager (Không có entity riêng, sử dụng User với ROLE_MANAGER)
+
+**Liên quan đến User Entity**:
+```java
+// Trong User.java
+@Entity
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String username;
+    private String fullname;
+    private String gender;
+    private Integer yob;
+    private String email;
+    private String avatar;
+    private String phone;
+    private String address;
+    private String password;
+    
+    @Enumerated(EnumType.STRING)
+    private ERole role;
+    
+    private boolean enabled = true;
+    // Các getter và setter
+}
+
+// Trong ERole.java
+public enum ERole {
+    ROLE_MEMBER,
+    ROLE_STAFF,
+    ROLE_CONSULTANT,
+    ROLE_MANAGER,
+    ROLE_ADMIN
+}
+```
+
+### 2. Consultant Entity
+
+```java
+@Entity
+public class Consultant {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String fullname;
+    private String email;
+    private String specialization;
+    private String avatar;
+    private boolean enabled;
+    
+    @OneToMany(mappedBy = "consultant")
+    private List<Slot> slots;
+    
+    @OneToMany(mappedBy = "consultant")
+    private List<Appointment> appointments;
+    
+    // Các getter và setter
+}
+```
+
+### 3. Slot Entity
+
+```java
+@Entity
+@Table(name = "slots")
+public class Slot {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(name = "date", nullable = false)
+    private LocalDate date;
+    
+    @Column(name = "start_time", nullable = false)
+    private LocalTime startTime;
+    
+    @Column(name = "end_time", nullable = false)
+    private LocalTime endTime;
+    
+    @Column(name = "available", nullable = false)
+    private boolean available = true;
+    
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "consultant_id", nullable = false)
+    private Consultant consultant;
+    
+    // Các getter và setter
+}
+```
+
+### 4. Appointment Entity
+
+```java
+@Entity
+@Table(name = "appointments")
+public class Appointment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "customer_name", nullable = false)
+    private String customerName;
+
+    @Column(name = "phone_number")
+    private String phoneNumber;
+
+    @Column(name = "email", nullable = false)
+    private String email;
+
+    @Column(name = "appointment_date", nullable = false)
+    private LocalDate appointmentDate;
+
+    @Column(name = "appointment_time", nullable = false)
+    private LocalTime appointmentTime;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "topic_id", nullable = false)
+    private Topic topic;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "consultant_id", nullable = true)
+    private Consultant consultant;
+
+    @Column(name = "is_guest", nullable = false)
+    private boolean isGuest = true;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
+    @Column(name = "status")
+    private String status = "PENDING"; // PENDING, CONFIRMED, CANCELED, COMPLETED
+    
+    // Các getter và setter
+}
+```
+
+### 5. Topic Entity
+
+```java
+@Entity
+@Table(name = "topics")
+public class Topic {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @Column(name = "name", nullable = false)
+    private String name;
+    
+    @Column(name = "description")
+    private String description;
+    
+    @Column(name = "active", nullable = false)
+    private boolean active = true;
+    
+    @ManyToMany(mappedBy = "topics")
+    private List<Consultant> consultants;
+    
+    @OneToMany(mappedBy = "topic")
+    private List<Appointment> appointments;
+    
+    // Các getter và setter
+}
+```
+
+## II. Controllers và Services
+
+### 1. Manager Controller
+
+```java
+@RestController
+@RequestMapping("/api/manager")
+@RequiredArgsConstructor
+public class ManagerController {
+    private final AdminService adminService;
+    private final TopicService topicService;
+    private final SurveyService surveyService;
+
+    @GetMapping("/dashboard")
+    @PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+    public ResponseEntity<Map<String, String>> getManagerDashboard() {
+        return ResponseEntity.ok(Map.of(
+                "message", "Welcome to Manager Dashboard",
+                "role", "MANAGER"
+        ));
+    }
+
+    @GetMapping("/staff")
+    @PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+    public List<UserDetailResponse> getAllStaff() {
+        return adminService.getUsersByRole("ROLE_STAFF");
+    }
+
+    @GetMapping("/consultants")
+    @PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+    public List<UserDetailResponse> getAllConsultants() {
+        return adminService.getUsersByRole("ROLE_CONSULTANT");
+    }
+
+    @PostMapping("/reports")
+    @PreAuthorize("hasAnyAuthority('ROLE_MANAGER', 'ROLE_ADMIN')")
+    public ResponseEntity<Map<String, String>> generateReport() {
+        // Implement report generation logic here
+        return ResponseEntity.ok(Map.of("message", "Report generated successfully"));
+    }
+
+    @PostMapping("/topic")
+    public ResponseEntity<TopicResponse> createTopic(@RequestBody TopicRequest topic) {
+        TopicResponse topicRes = topicService.create(topic);
+        return ResponseEntity.status(HttpStatus.CREATED).body(topicRes);
+    }
+
+    @PatchMapping("/topic/{id}")
+    public ResponseEntity<TopicResponse> updateTopic(@PathVariable Long id, @RequestBody TopicRequest topic) {
+        TopicResponse topicRes = topicService.update(id, topic);
+        return ResponseEntity.ok(topicRes);
+    }
+
+    @PostMapping(value = "/survey", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<SurveyResponse> createSurvey(@Valid @ModelAttribute SurveyCreateRequest request) throws IOException {
+        SurveyResponse surveyResponse = surveyService.createSurvey(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(surveyResponse);
+    }
+}
+```
+
+### 2. Consultant Controller
+
+```java
+@RestController
+@RequiredArgsConstructor
+@CrossOrigin(origins = "*", maxAge = 3600)
+public class ConsultantController {
+    private final ConsultantRepository consultantRepository;
+    private final AppointmentService appointmentService;
+    private final AppointmentRepository appointmentRepository;
+
+    @GetMapping("/api/consultants")
+    public ResponseEntity<List<Consultant>> getAllConsultants() {
+        List<Consultant> consultants = consultantRepository.findByEnabledTrue();
+        return ResponseEntity.ok(consultants);
+    }
+
+    @GetMapping("/api/consultants/{id}")
+    public ResponseEntity<Consultant> getConsultantById(@PathVariable Long id) {
+        return consultantRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/api/consultant/dashboard")
+    @PreAuthorize("hasAnyAuthority('ROLE_CONSULTANT', 'ROLE_ADMIN', 'ROLE_MANAGER')")
+    public ResponseEntity<Map<String, String>> getConsultantDashboard() {
+        return ResponseEntity.ok(Map.of(
+                "message", "Welcome to Consultant Dashboard",
+                "role", "CONSULTANT"
+        ));
+    }
+
+    @GetMapping("/api/consultant/appointments/unassigned")
+    @PreAuthorize("hasAnyAuthority('ROLE_CONSULTANT', 'ROLE_ADMIN', 'ROLE_MANAGER')")
+    public ResponseEntity<List<AppointmentResponseDto>> getUnassignedAppointments() {
+        List<AppointmentResponseDto> appointments = appointmentService.getUnassignedAppointments();
+        return ResponseEntity.ok(appointments);
+    }
+    
+    @PostMapping("/api/consultant/{consultantId}/appointments/{appointmentId}/claim")
+    @PreAuthorize("hasAnyAuthority('ROLE_CONSULTANT', 'ROLE_ADMIN', 'ROLE_MANAGER')")
+    public ResponseEntity<AppointmentResponseDto> claimAppointment(
+            @PathVariable Long consultantId,
+            @PathVariable Long appointmentId) {
+        AppointmentResponseDto appointment = appointmentService.claimAppointment(appointmentId, consultantId);
+        return ResponseEntity.ok(appointment);
+    }
+}
+```
+
+### 3. Appointment Controller
+
+```java
+@RestController
+@RequestMapping("/api/appointments")
+@RequiredArgsConstructor
+@CrossOrigin(origins = "*", maxAge = 3600)
+public class AppointmentController {
+    private final AppointmentService appointmentService;
+
+    @PostMapping
+    public ResponseEntity<AppointmentResponseDto> createAppointment(@Valid @RequestBody AppointmentRequestDto requestDto) {
+        AppointmentResponseDto responseDto = appointmentService.createAppointment(requestDto);
+        return new ResponseEntity<>(responseDto, HttpStatus.CREATED);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<AppointmentResponseDto>> getAllAppointments() {
+        List<AppointmentResponseDto> appointments = appointmentService.getAllAppointments();
+        return ResponseEntity.ok(appointments);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<AppointmentResponseDto> getAppointmentById(@PathVariable Long id) {
+        AppointmentResponseDto appointment = appointmentService.getAppointmentById(id);
+        return ResponseEntity.ok(appointment);
+    }
+
+    @GetMapping("/guest")
+    public ResponseEntity<List<AppointmentResponseDto>> getGuestAppointments(@RequestParam String email) {
+        List<AppointmentResponseDto> appointments = appointmentService.getAppointmentsByGuestEmail(email);
+        return ResponseEntity.ok(appointments);
+    }
+
+    @GetMapping("/user/{userId}")
+    public ResponseEntity<List<AppointmentResponseDto>> getUserAppointments(@PathVariable Long userId) {
+        List<AppointmentResponseDto> appointments = appointmentService.getAppointmentsByUserId(userId);
+        return ResponseEntity.ok(appointments);
+    }
+    
+    @GetMapping("/consultant/{consultantId}")
+    public ResponseEntity<List<AppointmentResponseDto>> getConsultantAppointments(@PathVariable Long consultantId) {
+        List<AppointmentResponseDto> appointments = appointmentService.getAppointmentsByConsultantId(consultantId);
+        return ResponseEntity.ok(appointments);
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<AppointmentResponseDto> updateAppointmentStatus(
+            @PathVariable Long id, 
+            @RequestParam String status,
+            @RequestParam(required = false) Long consultantId) {
+        
+        AppointmentResponseDto updatedAppointment;
+        
+        if (consultantId != null) {
+            updatedAppointment = appointmentService.updateAppointmentStatus(id, status, consultantId);
+        } else {
+            updatedAppointment = appointmentService.updateAppointmentStatus(id, status);
+        }
+        
+        return ResponseEntity.ok(updatedAppointment);
+    }
+    
+    @PostMapping("/{id}/cancel/user/{userId}")
+    public ResponseEntity<AppointmentResponseDto> cancelUserAppointment(
+            @PathVariable Long id,
+            @PathVariable Long userId) {
+        AppointmentResponseDto canceledAppointment = appointmentService.cancelAppointmentByUser(id, userId);
+        return ResponseEntity.ok(canceledAppointment);
+    }
+    
+    @PostMapping("/{id}/cancel/guest")
+    public ResponseEntity<AppointmentResponseDto> cancelGuestAppointment(
+            @PathVariable Long id,
+            @RequestParam String email) {
+        AppointmentResponseDto canceledAppointment = appointmentService.cancelAppointmentByGuest(id, email);
+        return ResponseEntity.ok(canceledAppointment);
+    }
+}
+```
+
+### 4. Slot Controller (Giả định dựa trên cấu trúc dự án)
+
+```java
+@RestController
+@RequestMapping("/api/slots")
+@RequiredArgsConstructor
+public class SlotController {
+    private final SlotService slotService;
+
+    @GetMapping("/{id}")
+    public ResponseEntity<SlotResponseDto> getSlotById(@PathVariable Long id) {
+        SlotResponseDto slot = slotService.getSlotById(id);
+        return ResponseEntity.ok(slot);
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAnyAuthority('ROLE_CONSULTANT', 'ROLE_ADMIN')")
+    public ResponseEntity<SlotResponseDto> createSlot(@Valid @RequestBody SlotRequestDto requestDto) {
+        SlotResponseDto slot = slotService.createSlot(requestDto);
+        return new ResponseEntity<>(slot, HttpStatus.CREATED);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_CONSULTANT', 'ROLE_ADMIN')")
+    public ResponseEntity<SlotResponseDto> updateSlot(@PathVariable Long id, @Valid @RequestBody SlotRequestDto requestDto) {
+        SlotResponseDto slot = slotService.updateSlot(id, requestDto);
+        return ResponseEntity.ok(slot);
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_CONSULTANT', 'ROLE_ADMIN')")
+    public ResponseEntity<Void> deleteSlot(@PathVariable Long id) {
+        slotService.deleteSlot(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/consultant/{consultantId}")
+    public ResponseEntity<List<SlotResponseDto>> getSlotsByConsultantId(@PathVariable Long consultantId) {
+        List<SlotResponseDto> slots = slotService.getSlotsByConsultantId(consultantId);
+        return ResponseEntity.ok(slots);
+    }
+
+    @GetMapping("/consultant/{consultantId}/available")
+    public ResponseEntity<List<SlotResponseDto>> getAvailableSlotsByConsultantId(@PathVariable Long consultantId) {
+        List<SlotResponseDto> slots = slotService.getAvailableSlotsByConsultantId(consultantId);
+        return ResponseEntity.ok(slots);
+    }
+}
+```
+
+## III. Repositories
+
+### 1. AppointmentRepository
+```java
+@Repository
+public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
+    List<Appointment> findByConsultant(Consultant consultant);
+    List<Appointment> findByUser(User user);
+    List<Appointment> findByAppointmentDate(LocalDate date);
+    List<Appointment> findByIsGuestAndEmailOrderByAppointmentDateDesc(boolean isGuest, String email);
+    List<Appointment> findByConsultantAndStatusIn(Consultant consultant, List<String> statuses);
+    List<Appointment> findByConsultantIsNull();
+    List<Appointment> findByConsultantIsNullAndStatus(String status);
+}
+```
+
+### 2. ConsultantRepository
+```java
+@Repository
+public interface ConsultantRepository extends JpaRepository<Consultant, Long> {
+    List<Consultant> findByEnabledTrue();
+}
+```
+
+### 3. SlotRepository
+```java
+@Repository
+public interface SlotRepository extends JpaRepository<Slot, Long> {
+    List<Slot> findByConsultantId(Long consultantId);
+    List<Slot> findByConsultantIdAndAvailableTrue(Long consultantId);
+    Optional<Slot> findAvailableSlotByConsultantAndDateTime(Long consultantId, LocalDate date, LocalTime time);
+}
+```
+
+### 4. TopicRepo
+```java
+@Repository
+public interface TopicRepo extends JpaRepository<Topic, Long> {
+    Topic findByIdAndActive(Long id, boolean active);
+    List<Topic> findByActive(boolean active);
+}
+```
+
+## IV. Services
+
+### 1. AppointmentService
+```java
+public interface AppointmentService {
+    AppointmentResponseDto createAppointment(AppointmentRequestDto requestDto);
+    List<AppointmentResponseDto> getAllAppointments();
+    AppointmentResponseDto getAppointmentById(Long id);
+    List<AppointmentResponseDto> getAppointmentsByGuestEmail(String email);
+    List<AppointmentResponseDto> getAppointmentsByUserId(Long userId);
+    List<AppointmentResponseDto> getAppointmentsByConsultantId(Long consultantId);
+    AppointmentResponseDto updateAppointmentStatus(Long id, String status, Long consultantId);
+    AppointmentResponseDto updateAppointmentStatus(Long id, String status);
+    AppointmentResponseDto cancelAppointmentByUser(Long id, Long userId);
+    AppointmentResponseDto cancelAppointmentByGuest(Long id, String email);
+    List<AppointmentResponseDto> getCompletedOrCanceledAppointmentsByConsultantId(Long consultantId);
+    List<AppointmentResponseDto> getUnassignedAppointments();
+    AppointmentResponseDto claimAppointment(Long appointmentId, Long consultantId);
+}
+```
+
+### 2. SlotService
+```java
+public interface SlotService {
+    SlotResponseDto getSlotById(Long id);
+    List<SlotResponseDto> getSlotsByConsultantId(Long consultantId);
+    List<SlotResponseDto> getAvailableSlotsByConsultantId(Long consultantId);
+    SlotResponseDto createSlot(SlotRequestDto requestDto);
+    SlotResponseDto updateSlot(Long id, SlotRequestDto requestDto);
+    void deleteSlot(Long id);
+}
+```
+
+### 3. TopicService
+```java
+public interface TopicService {
+    TopicResponse create(TopicRequest topicRequest);
+    TopicResponse update(Long id, TopicRequest topicRequest);
+    List<TopicResponse> getAllTopics();
+    List<TopicResponse> getTopicsCreatedByCurrentUser();
+}
+```
+
+### 4. AdminService
+```java
+public interface AdminService {
+    List<UserDetailResponse> getAllUsers();
+    List<UserDetailResponse> getUsersByRole(String role);
+    CreateUserResponse createUser(CreateUserRequest request);
+    UpdateUserResponse updateUser(Long userId, UpdateUserRequest request);
+    void deleteUser(Long userId);
+}
+```
+
+## V. Luồng chi tiết
+
+### 1. Luồng Manager
+
+#### 1.1. Quản lý Dashboard
+- **Controller**: `ManagerController.getManagerDashboard()`
+- **Endpoint**: `GET /api/manager/dashboard`
+- **Quyền**: ROLE_MANAGER, ROLE_ADMIN
+- **Luồng**:
+  1. Manager đăng nhập
+  2. Truy cập dashboard
+  3. Hệ thống trả về thông tin tổng quan
+
+#### 1.2. Quản lý Staff
+- **Controller**: `ManagerController.getAllStaff()`
+- **Endpoint**: `GET /api/manager/staff`
+- **Quyền**: ROLE_MANAGER, ROLE_ADMIN
+- **Service**: `AdminService.getUsersByRole("ROLE_STAFF")`
+- **Luồng**:
+  1. Manager truy cập trang quản lý staff
+  2. Hệ thống truy vấn danh sách staff từ cơ sở dữ liệu
+  3. Trả về danh sách staff cho Manager
+
+#### 1.3. Quản lý Consultant
+- **Controller**: `ManagerController.getAllConsultants()`
+- **Endpoint**: `GET /api/manager/consultants`
+- **Quyền**: ROLE_MANAGER, ROLE_ADMIN
+- **Service**: `AdminService.getUsersByRole("ROLE_CONSULTANT")`
+- **Luồng**:
+  1. Manager truy cập trang quản lý consultant
+  2. Hệ thống truy vấn danh sách consultant từ cơ sở dữ liệu
+  3. Trả về danh sách consultant cho Manager
+
+#### 1.4. Tạo báo cáo
+- **Controller**: `ManagerController.generateReport()`
+- **Endpoint**: `POST /api/manager/reports`
+- **Quyền**: ROLE_MANAGER, ROLE_ADMIN
+- **Luồng**:
+  1. Manager chọn loại báo cáo và thời gian
+  2. Gửi yêu cầu tạo báo cáo
+  3. Hệ thống xử lý và trả về báo cáo
+
+#### 1.5. Quản lý Topic
+- **Controller**: 
+  - `ManagerController.createTopic()`
+  - `ManagerController.updateTopic()`
+- **Endpoint**: 
+  - `POST /api/manager/topic`
+  - `PATCH /api/manager/topic/{id}`
+- **Service**: 
+  - `TopicService.create()`
+  - `TopicService.update()`
+- **Luồng**:
+  1. Manager truy cập trang quản lý topic
+  2. Tạo topic mới hoặc cập nhật topic hiện có
+  3. Hệ thống lưu thông tin và trả về kết quả
+
+#### 1.6. Quản lý Survey
+- **Controller**: `ManagerController.createSurvey()`
+- **Endpoint**: `POST /api/manager/survey`
+- **Service**: `SurveyService.createSurvey()`
+- **Luồng**:
+  1. Manager truy cập trang quản lý survey
+  2. Tạo survey mới với các câu hỏi và phần
+  3. Hệ thống lưu thông tin và trả về kết quả
+
+### 2. Luồng Consultant
+
+#### 2.1. Quản lý Dashboard
+- **Controller**: `ConsultantController.getConsultantDashboard()`
+- **Endpoint**: `GET /api/consultant/dashboard`
+- **Quyền**: ROLE_CONSULTANT, ROLE_ADMIN, ROLE_MANAGER
+- **Luồng**:
+  1. Consultant đăng nhập
+  2. Truy cập dashboard
+  3. Hệ thống trả về thông tin tổng quan
+
+#### 2.2. Xem lịch hẹn chưa phân công
+- **Controller**: `ConsultantController.getUnassignedAppointments()`
+- **Endpoint**: `GET /api/consultant/appointments/unassigned`
+- **Service**: `AppointmentService.getUnassignedAppointments()`
+- **Quyền**: ROLE_CONSULTANT, ROLE_ADMIN, ROLE_MANAGER
+- **Luồng**:
+  1. Consultant truy cập trang lịch hẹn chưa phân công
+  2. Hệ thống truy vấn danh sách lịch hẹn chưa có consultant
+  3. Trả về danh sách lịch hẹn cho Consultant
+
+#### 2.3. Nhận lịch hẹn
+- **Controller**: `ConsultantController.claimAppointment()`
+- **Endpoint**: `POST /api/consultant/{consultantId}/appointments/{appointmentId}/claim`
+- **Service**: `AppointmentService.claimAppointment()`
+- **Quyền**: ROLE_CONSULTANT, ROLE_ADMIN, ROLE_MANAGER
+- **Luồng**:
+  1. Consultant chọn lịch hẹn muốn nhận
+  2. Gửi yêu cầu nhận lịch hẹn
+  3. Hệ thống cập nhật lịch hẹn với consultant và trạng thái CONFIRMED
+  4. Gửi email thông báo cho khách hàng
+  5. Trả về thông tin lịch hẹn đã cập nhật
+
+### 3. Luồng Slot
+
+#### 3.1. Tạo Slot
+- **Controller**: `SlotController.createSlot()`
+- **Endpoint**: `POST /api/slots`
+- **Service**: `SlotService.createSlot()`
+- **Quyền**: ROLE_CONSULTANT, ROLE_ADMIN
+- **Luồng**:
+  1. Consultant truy cập trang quản lý slot
+  2. Tạo slot mới với ngày và giờ làm việc
+  3. Hệ thống lưu thông tin và trả về kết quả
+
+#### 3.2. Cập nhật Slot
+- **Controller**: `SlotController.updateSlot()`
+- **Endpoint**: `PUT /api/slots/{id}`
+- **Service**: `SlotService.updateSlot()`
+- **Quyền**: ROLE_CONSULTANT, ROLE_ADMIN
+- **Luồng**:
+  1. Consultant chọn slot cần cập nhật
+  2. Chỉnh sửa thông tin slot
+  3. Hệ thống cập nhật và trả về kết quả
+
+#### 3.3. Xóa Slot
+- **Controller**: `SlotController.deleteSlot()`
+- **Endpoint**: `DELETE /api/slots/{id}`
+- **Service**: `SlotService.deleteSlot()`
+- **Quyền**: ROLE_CONSULTANT, ROLE_ADMIN
+- **Luồng**:
+  1. Consultant chọn slot cần xóa
+  2. Gửi yêu cầu xóa slot
+  3. Hệ thống xóa slot và trả về kết quả
+
+#### 3.4. Xem Slot của Consultant
+- **Controller**: `SlotController.getSlotsByConsultantId()`
+- **Endpoint**: `GET /api/slots/consultant/{consultantId}`
+- **Service**: `SlotService.getSlotsByConsultantId()`
+- **Luồng**:
+  1. Consultant truy cập trang quản lý slot
+  2. Hệ thống truy vấn danh sách slot của consultant
+  3. Trả về danh sách slot
+
+### 4. Luồng Appointment
+
+#### 4.1. Tạo Appointment
+- **Controller**: `AppointmentController.createAppointment()`
+- **Endpoint**: `POST /api/appointments`
+- **Service**: `AppointmentService.createAppointment()`
+- **Luồng**:
+  1. Người dùng điền thông tin đặt lịch
+  2. Gửi yêu cầu đặt lịch
+  3. Hệ thống tạo lịch hẹn với trạng thái PENDING, không có consultant
+  4. Gửi email xác nhận đặt lịch
+  5. Trả về thông tin lịch hẹn đã tạo
+
+#### 4.2. Xem tất cả Appointment
+- **Controller**: `AppointmentController.getAllAppointments()`
+- **Endpoint**: `GET /api/appointments`
+- **Service**: `AppointmentService.getAllAppointments()`
+- **Luồng**:
+  1. Admin truy cập trang quản lý lịch hẹn
+  2. Hệ thống truy vấn tất cả lịch hẹn
+  3. Trả về danh sách lịch hẹn
+
+#### 4.3. Xem Appointment theo ID
+- **Controller**: `AppointmentController.getAppointmentById()`
+- **Endpoint**: `GET /api/appointments/{id}`
+- **Service**: `AppointmentService.getAppointmentById()`
+- **Luồng**:
+  1. Người dùng truy cập chi tiết lịch hẹn
+  2. Hệ thống truy vấn lịch hẹn theo ID
+  3. Trả về thông tin lịch hẹn
+
+#### 4.4. Xem Appointment của khách
+- **Controller**: `AppointmentController.getGuestAppointments()`
+- **Endpoint**: `GET /api/appointments/guest?email=example@email.com`
+- **Service**: `AppointmentService.getAppointmentsByGuestEmail()`
+- **Luồng**:
+  1. Khách nhập email để tra cứu lịch hẹn
+  2. Hệ thống truy vấn lịch hẹn theo email
+  3. Trả về danh sách lịch hẹn của khách
+
+#### 4.5. Xem Appointment của người dùng
+- **Controller**: `AppointmentController.getUserAppointments()`
+- **Endpoint**: `GET /api/appointments/user/{userId}`
+- **Service**: `AppointmentService.getAppointmentsByUserId()`
+- **Luồng**:
+  1. Người dùng đăng nhập và truy cập trang lịch hẹn
+  2. Hệ thống truy vấn lịch hẹn theo userId
+  3. Trả về danh sách lịch hẹn của người dùng
+
+#### 4.6. Xem Appointment của consultant
+- **Controller**: `AppointmentController.getConsultantAppointments()`
+- **Endpoint**: `GET /api/appointments/consultant/{consultantId}`
+- **Service**: `AppointmentService.getAppointmentsByConsultantId()`
+- **Luồng**:
+  1. Consultant truy cập trang lịch hẹn của mình
+  2. Hệ thống truy vấn lịch hẹn theo consultantId
+  3. Trả về danh sách lịch hẹn của consultant
+
+#### 4.7. Cập nhật trạng thái Appointment
+- **Controller**: `AppointmentController.updateAppointmentStatus()`
+- **Endpoint**: `PATCH /api/appointments/{id}/status?status=CONFIRMED&consultantId=1`
+- **Service**: `AppointmentService.updateAppointmentStatus()`
+- **Lu
+# Tiếp tục phân tích chi tiết các luồng và class trong project
+
+## V. Luồng chi tiết (tiếp theo)
+
+### 4. Luồng Appointment (tiếp theo)
+
+#### 4.7. Cập nhật trạng thái Appointment
+- **Controller**: `AppointmentController.updateAppointmentStatus()`
+- **Endpoint**: `PATCH /api/appointments/{id}/status?status=CONFIRMED&consultantId=1`
+- **Service**: `AppointmentService.updateAppointmentStatus()`
+- **Luồng**:
+  1. Consultant chọn lịch hẹn cần cập nhật
+  2. Chọn trạng thái mới (CONFIRMED, COMPLETED, CANCELED)
+  3. Gửi yêu cầu cập nhật trạng thái
+  4. Hệ thống kiểm tra quyền và cập nhật trạng thái
+  5. Gửi email thông báo cập nhật trạng thái
+  6. Trả về thông tin lịch hẹn đã cập nhật
+
+#### 4.8. Hủy Appointment (người dùng)
+- **Controller**: `AppointmentController.cancelUserAppointment()`
+- **Endpoint**: `POST /api/appointments/{id}/cancel/user/{userId}`
+- **Service**: `AppointmentService.cancelAppointmentByUser()`
+- **Luồng**:
+  1. Người dùng chọn lịch hẹn cần hủy
+  2. Gửi yêu cầu hủy lịch hẹn
+  3. Hệ thống kiểm tra quyền và cập nhật trạng thái thành CANCELED
+  4. Gửi email thông báo hủy lịch hẹn
+  5. Trả về thông tin lịch hẹn đã hủy
+
+#### 4.9. Hủy Appointment (khách)
+- **Controller**: `AppointmentController.cancelGuestAppointment()`
+- **Endpoint**: `POST /api/appointments/{id}/cancel/guest?email=example@email.com`
+- **Service**: `AppointmentService.cancelAppointmentByGuest()`
+- **Luồng**:
+  1. Khách nhập email và chọn lịch hẹn cần hủy
+  2. Gửi yêu cầu hủy lịch hẹn
+  3. Hệ thống kiểm tra email và cập nhật trạng thái thành CANCELED
+  4. Gửi email thông báo hủy lịch hẹn
+  5. Trả về thông tin lịch hẹn đã hủy
+
+## VI. Chi tiết triển khai các Service
+
+### 1. AppointmentServiceImpl
+
+```java
+@Service
+@RequiredArgsConstructor
+public class AppointmentServiceImpl implements AppointmentService {
+
+    private final AppointmentRepository appointmentRepository;
+    private final ConsultantRepository consultantRepository;
+    private final TopicRepo topicRepository;
+    private final UserRepository userRepository;
+    private final EmailService emailService;
+    private final SlotRepository slotRepository;
+
+    @Override
+    public AppointmentResponseDto createAppointment(AppointmentRequestDto requestDto) {
+        // Lấy topic theo ID
+        Topic topic = topicRepository.findByIdAndActive(requestDto.getTopicId(), true);
+        if(topic == null) {
+            throw new ResourceNotFoundException("Không tìm thấy chủ đề với ID: " + requestDto.getTopicId());
+        }
+
+        // Khởi tạo đối tượng Appointment
+        Appointment appointment = new Appointment();
+        appointment.setCustomerName(requestDto.getCustomerName());
+        appointment.setPhoneNumber(requestDto.getPhoneNumber());
+        appointment.setEmail(requestDto.getEmail());
+        appointment.setAppointmentDate(requestDto.getAppointmentDate());
+        appointment.setAppointmentTime(requestDto.getAppointmentTime());
+        appointment.setTopic(topic);
+        appointment.setStatus("PENDING");
+
+        // Nếu có userId, đây là thành viên đã đăng nhập
+        if (requestDto.getUserId() != null) {
+            User user = userRepository.findById(requestDto.getUserId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy người dùng với ID: " + requestDto.getUserId()));
+            appointment.setUser(user);
+            appointment.setGuest(false);
+        } else {
+            // Nếu không có userId, đây là khách
+            appointment.setGuest(true);
+        }
+
+        // Lưu vào database
+        Appointment savedAppointment = appointmentRepository.save(appointment);
+
+        // Gửi email xác nhận đặt lịch
+        emailService.sendAppointmentConfirmation(savedAppointment);
+
+        // Chuyển đổi thành AppointmentResponseDto và trả về
+        return mapToResponseDto(savedAppointment);
+    }
+
+    @Override
+    public List<AppointmentResponseDto> getUnassignedAppointments() {
+        List<Appointment> appointments = appointmentRepository.findByConsultantIsNull();
+        return appointments.stream()
+                .map(this::mapToResponseDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public AppointmentResponseDto claimAppointment(Long appointmentId, Long consultantId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cuộc hẹn với ID: " + appointmentId));
+        
+        // Kiểm tra xem cuộc hẹn đã được phân công chưa
+        if (appointment.getConsultant() != null) {
+            throw new IllegalArgumentException("Cuộc hẹn này đã được phân công cho tư vấn viên khác");
+        }
+        
+        // Lấy thông tin tư vấn viên
+        Consultant consultant = consultantRepository.findById(consultantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tư vấn viên với ID: " + consultantId));
+        
+        // Phân công cuộc hẹn cho tư vấn viên
+        appointment.setConsultant(consultant);
+        
+        // Cập nhật trạng thái nếu đang là PENDING
+        if ("PENDING".equals(appointment.getStatus())) {
+            String previousStatus = appointment.getStatus();
+            appointment.setStatus("CONFIRMED");
+            
+            // Lưu vào database
+            Appointment updatedAppointment = appointmentRepository.save(appointment);
+            
+            // Gửi email thông báo cập nhật trạng thái
+            emailService.sendAppointmentStatusUpdate(updatedAppointment, previousStatus);
+            
+            return mapToResponseDto(updatedAppointment);
+        } else {
+            // Nếu không phải PENDING, chỉ cập nhật consultant
+            Appointment updatedAppointment = appointmentRepository.save(appointment);
+            return mapToResponseDto(updatedAppointment);
+        }
+    }
+
+    @Override
+    public AppointmentResponseDto updateAppointmentStatus(Long id, String status, Long consultantId) {
+        Appointment appointment = appointmentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cuộc hẹn với ID: " + id));
+
+        // Get the consultant
+        Consultant consultant = consultantRepository.findById(consultantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tư vấn viên với ID: " + consultantId));
+        
+        // If appointment doesn't have a consultant, assign this consultant
+        if (appointment.getConsultant() == null) {
+            appointment.setConsultant(consultant);
+        } 
+        // If appointment has a different consultant, check if this consultant has permission
+        else if (!Objects.equals(appointment.getConsultant().getId(), consultantId)) {
+            throw new IllegalArgumentException("Tư vấn viên không có quyền cập nhật cuộc hẹn này");
+        }
+
+        // Kiểm tra status hợp lệ
+        if (!isValidStatus(status)) {
+            throw new IllegalArgumentException("Trạng thái không hợp lệ: " + status);
+        }
+
+        // Lưu trạng thái cũ để gửi email
+        String previousStatus = appointment.getStatus();
+
+        appointment.setStatus(status);
+        Appointment updatedAppointment = appointmentRepository.save(appointment);
+
+        // Gửi email thông báo cập nhật trạng thái
+        emailService.sendAppointmentStatusUpdate(updatedAppointment, previousStatus);
+
+        return mapToResponseDto(updatedAppointment);
+    }
+
+    // Các phương thức khác...
+    
+    private boolean isValidStatus(String status) {
+        return status.equals("PENDING") ||
+                status.equals("CONFIRMED") ||
+                status.equals("CANCELED") ||
+                status.equals("COMPLETED");
+    }
+
+    private AppointmentResponseDto mapToResponseDto(Appointment appointment) {
+        AppointmentResponseDto responseDto = new AppointmentResponseDto();
+        responseDto.setId(appointment.getId());
+        responseDto.setCustomerName(appointment.getCustomerName());
+        responseDto.setPhoneNumber(appointment.getPhoneNumber());
+        responseDto.setEmail(appointment.getEmail());
+        responseDto.setAppointmentDate(appointment.getAppointmentDate());
+        responseDto.setAppointmentTime(appointment.getAppointmentTime());
+        responseDto.setTopicName(appointment.getTopic().getName());
+        
+        // Handle null consultant
+        if (appointment.getConsultant() != null) {
+            responseDto.setConsultantName(appointment.getConsultant().getFullname());
+        } else {
+            responseDto.setConsultantName("Chưa phân công");
+        }
+        
+        responseDto.setGuest(appointment.isGuest());
+        responseDto.setStatus(appointment.getStatus());
+        
+        // Kiểm tra nếu không phải là guest thì mới có userId
+        if (!appointment.isGuest() && appointment.getUser() != null) {
+            responseDto.setUserId(appointment.getUser().getId());
+        }
+        
+        return responseDto;
+    }
+}
+```
+
+### 2. SlotServiceImpl (Giả định dựa trên cấu trúc dự án)
+
+```java
+@Service
+@RequiredArgsConstructor
+public class SlotServiceImpl implements SlotService {
+
+    private final SlotRepository slotRepository;
+    private final ConsultantRepository consultantRepository;
+
+    @Override
+    public SlotResponseDto getSlotById(Long id) {
+        Slot slot = slotRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy slot với ID: " + id));
+        return mapToResponseDto(slot);
+    }
+
+    @Override
+    public List<SlotResponseDto> getSlotsByConsultantId(Long consultantId) {
+        List<Slot> slots = slotRepository.findByConsultantId(consultantId);
+        return slots.stream()
+                .map(this::mapToResponseDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<SlotResponseDto> getAvailableSlotsByConsultantId(Long consultantId) {
+        List<Slot> slots = slotRepository.findByConsultantIdAndAvailableTrue(consultantId);
+        return slots.stream()
+                .map(this::mapToResponseDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public SlotResponseDto createSlot(SlotRequestDto requestDto) {
+        Consultant consultant = consultantRepository.findById(requestDto.getConsultantId())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tư vấn viên với ID: " + requestDto.getConsultantId()));
+        
+        Slot slot = new Slot();
+        slot.setConsultant(consultant);
+        slot.setDate(requestDto.getDate());
+        slot.setStartTime(requestDto.getStartTime());
+        slot.setEndTime(requestDto.getEndTime());
+        slot.setAvailable(true);
+        
+        Slot savedSlot = slotRepository.save(slot);
+        return mapToResponseDto(savedSlot);
+    }
+
+    @Override
+    public SlotResponseDto updateSlot(Long id, SlotRequestDto requestDto) {
+        Slot slot = slotRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy slot với ID: " + id));
+        
+        slot.setDate(requestDto.getDate());
+        slot.setStartTime(requestDto.getStartTime());
+        slot.setEndTime(requestDto.getEndTime());
+        if (requestDto.isAvailable() != null) {
+            slot.setAvailable(requestDto.isAvailable());
+        }
+        
+        Slot updatedSlot = slotRepository.save(slot);
+        return mapToResponseDto(updatedSlot);
+    }
+
+    @Override
+    public void deleteSlot(Long id) {
+        if (!slotRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Không tìm thấy slot với ID: " + id);
+        }
+        slotRepository.deleteById(id);
+    }
+    
+    private SlotResponseDto mapToResponseDto(Slot slot) {
+        SlotResponseDto responseDto = new SlotResponseDto();
+        responseDto.setId(slot.getId());
+        responseDto.setConsultantId(slot.getConsultant().getId());
+        responseDto.setConsultantName(slot.getConsultant().getFullname());
+        responseDto.setDate(slot.getDate());
+        responseDto.setStartTime(slot.getStartTime());
+        responseDto.setEndTime(slot.getEndTime());
+        responseDto.setAvailable(slot.isAvailable());
+        return responseDto;
+    }
+}
+```
+
+### 3. TopicServiceImpl
+
+```java
+@Service
+@RequiredArgsConstructor
+public class TopicServiceImpl implements TopicService {
+
+    private final TopicRepo topicRepository;
+    private final UserService userService;
+
+    @Override
+    public TopicResponse create(TopicRequest topicRequest) {
+        Topic topic = new Topic();
+        topic.setName(topicRequest.getName());
+        topic.setDescription(topicRequest.getDescription());
+        topic.setActive(true);
+        
+        Topic savedTopic = topicRepository.save(topic);
+        
+        return mapToResponse(savedTopic);
+    }
+
+    @Override
+    public TopicResponse update(Long id, TopicRequest topicRequest) {
+        Topic topic = topicRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy chủ đề với ID: " + id));
+        
+        topic.setName(topicRequest.getName());
+        topic.setDescription(topicRequest.getDescription());
+        if (topicRequest.isActive() != null) {
+            topic.setActive(topicRequest.isActive());
+        }
+        
+        Topic updatedTopic = topicRepository.save(topic);
+        
+        return mapToResponse(updatedTopic);
+    }
+
+    @Override
+    public List<TopicResponse> getAllTopics() {
+        List<Topic> topics = topicRepository.findByActive(true);
+        return topics.stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<TopicResponse> getTopicsCreatedByCurrentUser() {
+        // Giả định: Lấy thông tin người dùng hiện tại từ SecurityContext
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        
+        // Giả định: Có một trường creator trong Topic để lưu người tạo
+        // Đây là một giả định, vì mã nguồn thực tế có thể khác
+        List<Topic> topics = topicRepository.findAll().stream()
+                .filter(topic -> topic.getCreator() != null && topic.getCreator().getUsername().equals(username))
+                .collect(Collectors.toList());
+        
+        return topics.stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+    
+    private TopicResponse mapToResponse(Topic topic) {
+        TopicResponse response = new TopicResponse();
+        response.setId(topic.getId());
+        response.setName(topic.getName());
+        response.setDescription(topic.getDescription());
+        response.setActive(topic.isActive());
+        return response;
+    }
+}
+```
+
+## VII. Mối quan hệ giữa các luồng
+
+### 1. Mối quan hệ Manager - Topic - Appointment
+
+1. **Manager tạo Topic**:
+   - Manager tạo các chủ đề tư vấn thông qua `POST /api/manager/topic`
+   - Topic được lưu trong cơ sở dữ liệu với trạng thái active = true
+
+2. **Người dùng chọn Topic khi đặt Appointment**:
+   - Người dùng xem danh sách Topic thông qua `GET /api/topics`
+   - Khi đặt lịch, người dùng chọn một Topic và gửi topicId trong `AppointmentRequestDto`
+   - Hệ thống tạo Appointment với liên kết đến Topic đã chọn
+
+3. **Manager xem báo cáo về Appointment theo Topic**:
+   - Manager có thể xem thống kê số lượng lịch hẹn theo từng chủ đề
+   - Giúp Manager đánh giá mức độ phổ biến và nhu cầu của từng chủ đề
+
+### 2. Mối quan hệ Consultant - Slot - Appointment
+
+1. **Consultant tạo Slot**:
+   - Consultant đăng ký các khung giờ làm việc thông qua `POST /api/slots`
+   - Slot được lưu trong cơ sở dữ liệu với trạng thái available = true
+
+2. **Người dùng tạo Appointment**:
+   - Người dùng đặt lịch hẹn thông qua `POST /api/appointments`
+   - Trong mô hình mới, Appointment được tạo mà không cần kiểm tra Slot
+   - Appointment có trạng thái PENDING và consultant = null
+
+3. **Consultant xem và nhận Appointment**:
+   - Consultant xem danh sách Appointment chưa phân công thông qua `GET /api/consultant/appointments/unassigned`
+   - Consultant có thể so sánh với Slot của mình để quyết định nhận Appointment nào
+   - Consultant nhận Appointment thông qua `POST /api/consultant/{consultantId}/appointments/{appointmentId}/claim`
+   - Khi nhận, Appointment được cập nhật với consultant và trạng thái CONFIRMED
+
+4. **Consultant cập nhật trạng thái Appointment**:
+   - Sau khi buổi tư vấn diễn ra, Consultant cập nhật trạng thái thông qua `PATCH /api/appointments/{id}/status`
+   - Trạng thái có thể là COMPLETED hoặc CANCELED
+   - Hệ thống gửi email thông báo cho khách hàng
+
+### 3. Mối quan hệ Manager - Consultant - Appointment
+
+1. **Manager quản lý Consultant**:
+   - Manager xem danh sách Consultant thông qua `GET /api/manager/consultants`
+   - Manager có thể đánh giá hiệu suất của các Consultant dựa trên số lượng và chất lượng Appointment
+
+2. **Manager xem báo cáo về Appointment**:
+   - Manager tạo báo cáo thông qua `POST /api/manager/reports`
+   - Báo cáo có thể bao gồm thống kê về số lượng Appointment theo Consultant, tỷ lệ hoàn thành, hủy...
+
+3. **Manager giám sát hoạt động**:
+   - Manager có thể xem tổng quan về hoạt động của hệ thống thông qua dashboard
+   - Bao gồm số lượng Appointment, tỷ lệ Appointment đã được phân công, tỷ lệ hoàn thành...
+
+## VIII. Tóm tắt các luồng chính
+
+### 1. Luồng đặt lịch và xử lý lịch hẹn
+1. Người dùng đặt lịch hẹn (không cần chọn consultant)
+2. Hệ thống tạo Appointment với trạng thái PENDING
+3. Consultant xem danh sách Appointment chưa phân công
+4. Consultant nhận Appointment và trạng thái chuyển thành CONFIRMED
+5. Buổi tư vấn diễn ra theo lịch hẹn
+6. Consultant cập nhật trạng thái thành COMPLETED
+7. Hệ thống gửi email thông báo cho khách hàng
+
+### 2. Luồng quản lý slot làm việc
+1. Consultant đăng nhập và truy cập quản lý slot
+2. Consultant tạo các slot với ngày và giờ làm việc
+3. Consultant có thể cập nhật hoặc xóa slot
+4. Khi nhận Appointment, Consultant có thể tham khảo slot để tránh xung đột lịch trình
+
+### 3. Luồng quản lý của Manager
+1. Manager đăng nhập và truy cập dashboard
+2. Manager quản lý Topic (tạo, cập nhật)
+3. Manager quản lý Survey (tạo, xem kết quả)
+4. Manager xem danh sách Staff và Consultant
+5. Manager tạo báo cáo thống kê
+
+Đây là phân tích chi tiết về các luồng và class trong project của bạn. Mô hình này cho thấy một hệ thống đặt lịch hẹn linh hoạt, không phụ thuộc vào việc phải có tư vấn viên khả dụng trước khi đặt lịch, giúp tối ưu hóa trải nghiệm người dùng và hiệu quả làm việc của tư vấn viên.
