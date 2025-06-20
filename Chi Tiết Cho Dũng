@@ -1,0 +1,237 @@
+# Phân tích chi tiết từng luồng cho người mới
+
+## 1. Luồng đặt lịch hẹn (từ góc độ người dùng)
+
+### Bước 1: Người dùng truy cập trang đặt lịch
+- **Mô tả**: Người dùng vào trang web và nhấp vào mục "Đặt lịch tư vấn"
+- **Frontend**: Hiển thị form đặt lịch với các trường thông tin cần thiết
+- **API sử dụng**: `GET /api/topics` (để hiển thị danh sách chủ đề tư vấn)
+
+### Bước 2: Người dùng điền thông tin đặt lịch
+- **Mô tả**: Người dùng nhập các thông tin cá nhân và chọn chủ đề, ngày giờ
+- **Thông tin cần điền**:
+  - Họ tên
+  - Số điện thoại
+  - Email
+  - Chủ đề tư vấn (chọn từ danh sách)
+  - Ngày hẹn
+  - Giờ hẹn
+- **Lưu ý**: Không cần chọn tư vấn viên trong hệ thống mới
+
+### Bước 3: Gửi yêu cầu đặt lịch
+- **Mô tả**: Người dùng nhấn nút "Đặt lịch" để gửi thông tin
+- **Frontend**: Gửi dữ liệu form đến server
+- **API sử dụng**: `POST /api/appointments`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "customerName": "Nguyễn Văn A",
+  "phoneNumber": "0987654321",
+  "email": "nguyenvana@example.com",
+  "appointmentDate": "15/12/2023",
+  "appointmentTime": "14:30",
+  "topicId": 1,
+  "userId": null  // null nếu là khách, ID nếu đã đăng nhập
+}
+```
+
+### Bước 4: Nhận xác nhận đặt lịch
+- **Mô tả**: Hệ thống xử lý và trả về thông báo đặt lịch thành công
+- **Frontend**: Hiển thị thông báo thành công và thông tin lịch hẹn
+- **Backend**: Lưu lịch hẹn với trạng thái "PENDING" và consultant = null
+- **Email**: Hệ thống gửi email xác nhận đặt lịch thành công
+
+### Bước 5: Xem lịch hẹn đã đặt
+- **Mô tả**: Người dùng muốn xem lại lịch hẹn đã đặt
+- **Frontend**: Hiển thị trang tra cứu lịch hẹn
+- **API sử dụng**:
+  - Nếu đã đăng nhập: `GET /api/appointments/user/{userId}`
+  - Nếu là khách: `GET /api/appointments/guest?email=nguyenvana@example.com`
+- **Hiển thị**: Danh sách lịch hẹn với trạng thái, thời gian, chủ đề
+
+### Bước 6: Hủy lịch hẹn (nếu cần)
+- **Mô tả**: Người dùng muốn hủy lịch hẹn đã đặt
+- **Frontend**: Hiển thị nút "Hủy lịch hẹn" trong chi tiết lịch hẹn
+- **API sử dụng**:
+  - Nếu đã đăng nhập: `POST /api/appointments/{id}/cancel/user/{userId}`
+  - Nếu là khách: `POST /api/appointments/{id}/cancel/guest?email=nguyenvana@example.com`
+- **Backend**: Cập nhật trạng thái lịch hẹn thành "CANCELED"
+- **Email**: Hệ thống gửi email thông báo hủy lịch hẹn
+
+## 2. Luồng quản lý slot làm việc (từ góc độ tư vấn viên)
+
+### Bước 1: Tư vấn viên đăng nhập
+- **Mô tả**: Tư vấn viên đăng nhập vào hệ thống
+- **Frontend**: Form đăng nhập yêu cầu username/email và mật khẩu
+- **API sử dụng**: `POST /api/auth/login`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "username": "consultant1",
+  "password": "password123"
+}
+```
+- **Dữ liệu nhận về**: JWT token và thông tin người dùng
+
+### Bước 2: Truy cập quản lý slot
+- **Mô tả**: Tư vấn viên vào trang quản lý slot làm việc
+- **Frontend**: Hiển thị lịch làm việc và danh sách slot hiện có
+- **API sử dụng**: `GET /api/slots/consultant/{consultantId}`
+- **Hiển thị**: Danh sách các slot với ngày, giờ bắt đầu, giờ kết thúc, trạng thái
+
+### Bước 3: Tạo slot mới
+- **Mô tả**: Tư vấn viên tạo khung giờ làm việc mới
+- **Frontend**: Form thêm slot với các trường ngày, giờ bắt đầu, giờ kết thúc
+- **API sử dụng**: `POST /api/slots`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "consultantId": 1,
+  "date": "15/12/2023",
+  "startTime": "09:00",
+  "endTime": "10:00"
+}
+```
+- **Backend**: Lưu slot mới với trạng thái available = true
+
+### Bước 4: Cập nhật slot
+- **Mô tả**: Tư vấn viên thay đổi thông tin slot đã tạo
+- **Frontend**: Form chỉnh sửa slot với các trường có thể thay đổi
+- **API sử dụng**: `PUT /api/slots/{id}`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "date": "16/12/2023",
+  "startTime": "10:00",
+  "endTime": "11:00",
+  "available": true
+}
+```
+- **Backend**: Cập nhật thông tin slot trong cơ sở dữ liệu
+
+### Bước 5: Xóa slot
+- **Mô tả**: Tư vấn viên xóa slot không còn cần thiết
+- **Frontend**: Nút "Xóa" bên cạnh mỗi slot
+- **API sử dụng**: `DELETE /api/slots/{id}`
+- **Backend**: Xóa slot khỏi cơ sở dữ liệu
+
+## 3. Luồng xử lý lịch hẹn (từ góc độ tư vấn viên)
+
+### Bước 1: Xem lịch hẹn chưa phân công
+- **Mô tả**: Tư vấn viên xem danh sách lịch hẹn chưa có ai phụ trách
+- **Frontend**: Hiển thị tab "Lịch hẹn chưa phân công" trong dashboard
+- **API sử dụng**: `GET /api/consultant/appointments/unassigned`
+- **Hiển thị**: Danh sách lịch hẹn với thông tin khách hàng, ngày giờ, chủ đề
+
+### Bước 2: Nhận lịch hẹn
+- **Mô tả**: Tư vấn viên chọn lịch hẹn muốn phụ trách
+- **Frontend**: Nút "Nhận lịch hẹn" bên cạnh mỗi lịch hẹn chưa phân công
+- **API sử dụng**: `POST /api/consultant/{consultantId}/appointments/{appointmentId}/claim`
+- **Backend**:
+  - Cập nhật lịch hẹn với consultant = tư vấn viên hiện tại
+  - Chuyển trạng thái từ "PENDING" sang "CONFIRMED"
+- **Email**: Hệ thống gửi email thông báo xác nhận lịch hẹn cho khách hàng
+
+### Bước 3: Xem lịch hẹn đã nhận
+- **Mô tả**: Tư vấn viên xem danh sách lịch hẹn của mình
+- **Frontend**: Hiển thị tab "Lịch hẹn của tôi" trong dashboard
+- **API sử dụng**: `GET /api/appointments/consultant/{consultantId}`
+- **Hiển thị**: Danh sách lịch hẹn đã được phân công cho tư vấn viên
+
+### Bước 4: Cập nhật trạng thái lịch hẹn
+- **Mô tả**: Tư vấn viên cập nhật trạng thái sau khi xử lý lịch hẹn
+- **Frontend**: Menu dropdown để chọn trạng thái mới (CONFIRMED, COMPLETED, CANCELED)
+- **API sử dụng**: `PATCH /api/appointments/{id}/status?status=COMPLETED&consultantId={consultantId}`
+- **Backend**: Cập nhật trạng thái lịch hẹn trong cơ sở dữ liệu
+- **Email**: Hệ thống gửi email thông báo cập nhật trạng thái cho khách hàng
+
+### Bước 5: Xem lịch sử lịch hẹn
+- **Mô tả**: Tư vấn viên xem lịch sử các lịch hẹn đã hoàn thành hoặc hủy
+- **Frontend**: Hiển thị tab "Lịch sử" trong dashboard
+- **API sử dụng**: `GET /api/appointments/consultant/{consultantId}/history`
+- **Hiển thị**: Danh sách lịch hẹn với trạng thái COMPLETED hoặc CANCELED
+
+## 4. Luồng kết hợp giữa Slot và Appointment
+
+Mặc dù trong hệ thống mới, Slot không còn là điều kiện bắt buộc để tạo Appointment, nhưng chúng vẫn có mối quan hệ với nhau. Dưới đây là cách kết hợp giữa hai luồng này:
+
+### Bước 1: Tư vấn viên tạo các slot làm việc
+- Tư vấn viên đăng ký các khung giờ họ có thể làm việc
+- Các slot này được lưu trong cơ sở dữ liệu
+
+### Bước 2: Người dùng đặt lịch hẹn
+- Người dùng đặt lịch hẹn mà không cần biết có tư vấn viên nào rảnh hay không
+- Lịch hẹn được tạo với trạng thái PENDING và không có tư vấn viên
+
+### Bước 3: Tư vấn viên xem lịch hẹn chưa phân công
+- Tư vấn viên có thể xem danh sách lịch hẹn chưa được phân công
+- Họ có thể so sánh với slot của mình để tìm lịch hẹn phù hợp
+
+### Bước 4: Tư vấn viên nhận lịch hẹn
+- Khi tư vấn viên nhận lịch hẹn, họ có thể cập nhật slot tương ứng thành không khả dụng
+- Điều này giúp tránh xung đột lịch trình
+
+### Bước 5: Cập nhật trạng thái lịch hẹn
+- Khi lịch hẹn hoàn thành hoặc bị hủy, tư vấn viên có thể cập nhật slot thành khả dụng lại
+- Điều này cho phép tái sử dụng slot cho lịch hẹn khác
+
+## 5. Các trạng thái của lịch hẹn và ý nghĩa
+
+### PENDING (Chờ xử lý)
+- **Khi nào**: Khi lịch hẹn mới được tạo
+- **Ý nghĩa**: Lịch hẹn đã được tạo nhưng chưa có tư vấn viên nhận
+- **Hiển thị cho người dùng**: "Đang chờ xác nhận"
+
+### CONFIRMED (Đã xác nhận)
+- **Khi nào**: Khi tư vấn viên nhận lịch hẹn
+- **Ý nghĩa**: Lịch hẹn đã được tư vấn viên xác nhận và sẽ diễn ra theo kế hoạch
+- **Hiển thị cho người dùng**: "Đã xác nhận"
+
+### CANCELED (Đã hủy)
+- **Khi nào**: Khi người dùng hoặc tư vấn viên hủy lịch hẹn
+- **Ý nghĩa**: Lịch hẹn sẽ không diễn ra
+- **Hiển thị cho người dùng**: "Đã hủy"
+
+### COMPLETED (Đã hoàn thành)
+- **Khi nào**: Khi buổi tư vấn đã diễn ra xong
+- **Ý nghĩa**: Lịch hẹn đã được thực hiện thành công
+- **Hiển thị cho người dùng**: "Đã hoàn thành"
+
+## 6. Ví dụ cụ thể từ đầu đến cuối
+
+### Ví dụ: Từ đặt lịch đến hoàn thành
+
+1. **Tư vấn viên Nguyễn Văn A tạo slot**:
+   - Ngày: 15/12/2023
+   - Giờ: 9:00 - 10:00
+   - API: `POST /api/slots` với dữ liệu tương ứng
+
+2. **Người dùng Trần Thị B đặt lịch**:
+   - Thông tin: Họ tên, SĐT, email
+   - Chủ đề: Tư vấn tâm lý
+   - Ngày giờ: 15/12/2023, 14:30
+   - API: `POST /api/appointments` với dữ liệu tương ứng
+   - Kết quả: Lịch hẹn được tạo với trạng thái PENDING, không có tư vấn viên
+
+3. **Tư vấn viên Nguyễn Văn A xem lịch hẹn chưa phân công**:
+   - API: `GET /api/consultant/appointments/unassigned`
+   - Kết quả: Thấy lịch hẹn của Trần Thị B
+
+4. **Tư vấn viên Nguyễn Văn A nhận lịch hẹn**:
+   - API: `POST /api/consultant/1/appointments/1/claim`
+   - Kết quả: Lịch hẹn được cập nhật với consultant = Nguyễn Văn A, trạng thái = CONFIRMED
+   - Email: Hệ thống gửi email thông báo cho Trần Thị B
+
+5. **Buổi tư vấn diễn ra**:
+   - Tư vấn viên và người dùng gặp nhau theo lịch hẹn
+
+6. **Tư vấn viên cập nhật trạng thái**:
+   - API: `PATCH /api/appointments/1/status?status=COMPLETED&consultantId=1`
+   - Kết quả: Lịch hẹn được cập nhật với trạng thái = COMPLETED
+   - Email: Hệ thống gửi email thông báo cho Trần Thị B
+
+7. **Người dùng xem lịch sử lịch hẹn**:
+   - API: `GET /api/appointments/guest?email=tranthib@example.com`
+   - Kết quả: Thấy lịch hẹn với trạng thái COMPLETED
+
+Hy vọng phân tích chi tiết này giúp bạn hiểu rõ hơn về các luồng làm việc trong hệ thống. Nếu có bất kỳ phần nào còn chưa rõ, đừng ngại hỏi thêm!
