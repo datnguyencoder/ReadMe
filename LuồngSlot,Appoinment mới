@@ -1,0 +1,636 @@
+# Phân tích chi tiết API và luồng dữ liệu cho Frontend
+
+## I. API Slot (Khung giờ làm việc)
+
+### 1. Lấy slot theo ID
+- **Endpoint**: `GET /api/slots/{id}`
+- **Quyền truy cập**: Không yêu cầu
+- **Tham số đường dẫn**: 
+  - `id`: ID của slot
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 1,
+  "consultantId": 2,
+  "consultantName": "Nguyễn Văn A",
+  "date": "15/12/2023",
+  "startTime": "09:00",
+  "endTime": "10:00",
+  "available": true
+}
+```
+
+### 2. Tạo slot mới
+- **Endpoint**: `POST /api/slots`
+- **Quyền truy cập**: ROLE_CONSULTANT
+- **Request body**:
+```json
+{
+  "consultantId": 2,
+  "date": "15/12/2023",
+  "startTime": "09:00",
+  "endTime": "10:00"
+}
+```
+- **Response thành công (201 Created)**:
+```json
+{
+  "id": 1,
+  "consultantId": 2,
+  "consultantName": "Nguyễn Văn A",
+  "date": "15/12/2023",
+  "startTime": "09:00",
+  "endTime": "10:00",
+  "available": true
+}
+```
+
+### 3. Cập nhật slot
+- **Endpoint**: `PUT /api/slots/{id}`
+- **Quyền truy cập**: ROLE_CONSULTANT
+- **Tham số đường dẫn**:
+  - `id`: ID của slot
+- **Request body**:
+```json
+{
+  "date": "16/12/2023",
+  "startTime": "10:00",
+  "endTime": "11:00",
+  "available": true
+}
+```
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 1,
+  "consultantId": 2,
+  "consultantName": "Nguyễn Văn A",
+  "date": "16/12/2023",
+  "startTime": "10:00",
+  "endTime": "11:00",
+  "available": true
+}
+```
+
+### 4. Xóa slot
+- **Endpoint**: `DELETE /api/slots/{id}`
+- **Quyền truy cập**: ROLE_CONSULTANT
+- **Tham số đường dẫn**:
+  - `id`: ID của slot
+- **Response thành công (204 No Content)**
+
+### 5. Lấy slot của tư vấn viên
+- **Endpoint**: `GET /api/slots/consultant/{consultantId}`
+- **Quyền truy cập**: Không yêu cầu
+- **Tham số đường dẫn**:
+  - `consultantId`: ID của tư vấn viên
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "consultantId": 2,
+    "consultantName": "Nguyễn Văn A",
+    "date": "15/12/2023",
+    "startTime": "09:00",
+    "endTime": "10:00",
+    "available": true
+  },
+  {
+    "id": 2,
+    "consultantId": 2,
+    "consultantName": "Nguyễn Văn A",
+    "date": "15/12/2023",
+    "startTime": "10:00",
+    "endTime": "11:00",
+    "available": false
+  }
+]
+```
+
+### 6. Lấy slot khả dụng của tư vấn viên
+- **Endpoint**: `GET /api/slots/consultant/{consultantId}/available`
+- **Quyền truy cập**: Không yêu cầu
+- **Tham số đường dẫn**:
+  - `consultantId`: ID của tư vấn viên
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "consultantId": 2,
+    "consultantName": "Nguyễn Văn A",
+    "date": "15/12/2023",
+    "startTime": "09:00",
+    "endTime": "10:00",
+    "available": true
+  }
+]
+```
+
+## II. API Consultant (Tư vấn viên)
+
+### 1. Lấy tất cả tư vấn viên đang hoạt động
+- **Endpoint**: `GET /api/consultants`
+- **Quyền truy cập**: Không yêu cầu
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "fullname": "Nguyễn Văn A",
+    "email": "nguyenvana@example.com",
+    "specialization": "Tư vấn tâm lý",
+    "avatar": "https://example.com/avatar1.jpg",
+    "enabled": true
+  },
+  {
+    "id": 2,
+    "fullname": "Trần Thị B",
+    "email": "tranthib@example.com",
+    "specialization": "Tư vấn hướng nghiệp",
+    "avatar": "https://example.com/avatar2.jpg",
+    "enabled": true
+  }
+]
+```
+
+### 2. Lấy thông tin tư vấn viên theo ID
+- **Endpoint**: `GET /api/consultants/{id}`
+- **Quyền truy cập**: Không yêu cầu
+- **Tham số đường dẫn**:
+  - `id`: ID của tư vấn viên
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 1,
+  "fullname": "Nguyễn Văn A",
+  "email": "nguyenvana@example.com",
+  "specialization": "Tư vấn tâm lý",
+  "avatar": "https://example.com/avatar1.jpg",
+  "enabled": true,
+  "description": "Chuyên gia tư vấn tâm lý với 5 năm kinh nghiệm",
+  "phoneNumber": "0987654321"
+}
+```
+
+### 3. Truy cập dashboard của tư vấn viên
+- **Endpoint**: `GET /api/consultant/dashboard`
+- **Quyền truy cập**: ROLE_CONSULTANT, ROLE_ADMIN, ROLE_MANAGER
+- **Response thành công (200 OK)**:
+```json
+{
+  "message": "Welcome to Consultant Dashboard",
+  "role": "CONSULTANT"
+}
+```
+
+### 4. Lấy lịch hẹn chưa được phân công
+- **Endpoint**: `GET /api/consultant/appointments/unassigned`
+- **Quyền truy cập**: ROLE_CONSULTANT, ROLE_ADMIN, ROLE_MANAGER
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "customerName": "Lê Văn C",
+    "phoneNumber": "0987654321",
+    "email": "levanc@example.com",
+    "appointmentDate": "15/12/2023",
+    "appointmentTime": "14:30",
+    "topicName": "Tư vấn tâm lý",
+    "consultantName": "Chưa phân công",
+    "isGuest": true,
+    "status": "PENDING"
+  },
+  {
+    "id": 2,
+    "customerName": "Phạm Thị D",
+    "phoneNumber": "0123456789",
+    "email": "phamthid@example.com",
+    "appointmentDate": "16/12/2023",
+    "appointmentTime": "10:00",
+    "topicName": "Tư vấn hướng nghiệp",
+    "consultantName": "Chưa phân công",
+    "isGuest": false,
+    "status": "PENDING",
+    "userId": 3
+  }
+]
+```
+
+### 5. Nhận lịch hẹn chưa được phân công
+- **Endpoint**: `POST /api/consultant/{consultantId}/appointments/{appointmentId}/claim`
+- **Quyền truy cập**: ROLE_CONSULTANT, ROLE_ADMIN, ROLE_MANAGER
+- **Tham số đường dẫn**:
+  - `consultantId`: ID của tư vấn viên
+  - `appointmentId`: ID của lịch hẹn
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 1,
+  "customerName": "Lê Văn C",
+  "phoneNumber": "0987654321",
+  "email": "levanc@example.com",
+  "appointmentDate": "15/12/2023",
+  "appointmentTime": "14:30",
+  "topicName": "Tư vấn tâm lý",
+  "consultantName": "Nguyễn Văn A",
+  "isGuest": true,
+  "status": "CONFIRMED"
+}
+```
+
+## III. API Appointment (Lịch hẹn)
+
+### 1. Tạo lịch hẹn mới
+- **Endpoint**: `POST /api/appointments`
+- **Quyền truy cập**: Không yêu cầu
+- **Request body**:
+```json
+{
+  "customerName": "Lê Văn C",
+  "phoneNumber": "0987654321",
+  "email": "levanc@example.com",
+  "appointmentDate": "15/12/2023",
+  "appointmentTime": "14:30",
+  "topicId": 1,
+  "userId": null
+}
+```
+- **Response thành công (201 Created)**:
+```json
+{
+  "id": 1,
+  "customerName": "Lê Văn C",
+  "phoneNumber": "0987654321",
+  "email": "levanc@example.com",
+  "appointmentDate": "15/12/2023",
+  "appointmentTime": "14:30",
+  "topicName": "Tư vấn tâm lý",
+  "consultantName": "Chưa phân công",
+  "isGuest": true,
+  "status": "PENDING"
+}
+```
+
+### 2. Lấy tất cả lịch hẹn
+- **Endpoint**: `GET /api/appointments`
+- **Quyền truy cập**: ROLE_ADMIN
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "customerName": "Lê Văn C",
+    "phoneNumber": "0987654321",
+    "email": "levanc@example.com",
+    "appointmentDate": "15/12/2023",
+    "appointmentTime": "14:30",
+    "topicName": "Tư vấn tâm lý",
+    "consultantName": "Chưa phân công",
+    "isGuest": true,
+    "status": "PENDING"
+  }
+]
+```
+
+### 3. Lấy lịch hẹn theo ID
+- **Endpoint**: `GET /api/appointments/{id}`
+- **Quyền truy cập**: Người dùng liên quan
+- **Tham số đường dẫn**:
+  - `id`: ID của lịch hẹn
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 1,
+  "customerName": "Lê Văn C",
+  "phoneNumber": "0987654321",
+  "email": "levanc@example.com",
+  "appointmentDate": "15/12/2023",
+  "appointmentTime": "14:30",
+  "topicName": "Tư vấn tâm lý",
+  "consultantName": "Chưa phân công",
+  "isGuest": true,
+  "status": "PENDING"
+}
+```
+
+### 4. Lấy lịch hẹn của khách không đăng nhập
+- **Endpoint**: `GET /api/appointments/guest?email=levanc@example.com`
+- **Quyền truy cập**: Không yêu cầu
+- **Tham số truy vấn**:
+  - `email`: Email của khách
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 1,
+    "customerName": "Lê Văn C",
+    "phoneNumber": "0987654321",
+    "email": "levanc@example.com",
+    "appointmentDate": "15/12/2023",
+    "appointmentTime": "14:30",
+    "topicName": "Tư vấn tâm lý",
+    "consultantName": "Chưa phân công",
+    "isGuest": true,
+    "status": "PENDING"
+  }
+]
+```
+
+### 5. Lấy lịch hẹn của người dùng đã đăng nhập
+- **Endpoint**: `GET /api/appointments/user/{userId}`
+- **Quyền truy cập**: ROLE_MEMBER (người dùng với userId tương ứng)
+- **Tham số đường dẫn**:
+  - `userId`: ID của người dùng
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 2,
+    "customerName": "Phạm Thị D",
+    "phoneNumber": "0123456789",
+    "email": "phamthid@example.com",
+    "appointmentDate": "16/12/2023",
+    "appointmentTime": "10:00",
+    "topicName": "Tư vấn hướng nghiệp",
+    "consultantName": "Trần Thị B",
+    "isGuest": false,
+    "status": "CONFIRMED",
+    "userId": 3
+  }
+]
+```
+
+### 6. Lấy lịch hẹn của tư vấn viên
+- **Endpoint**: `GET /api/appointments/consultant/{consultantId}`
+- **Quyền truy cập**: ROLE_CONSULTANT (tư vấn viên với consultantId tương ứng)
+- **Tham số đường dẫn**:
+  - `consultantId`: ID của tư vấn viên
+- **Response thành công (200 OK)**:
+```json
+[
+  {
+    "id": 3,
+    "customerName": "Hoàng Văn E",
+    "phoneNumber": "0369852147",
+    "email": "hoangvane@example.com",
+    "appointmentDate": "17/12/2023",
+    "appointmentTime": "15:00",
+    "topicName": "Tư vấn tâm lý",
+    "consultantName": "Nguyễn Văn A",
+    "isGuest": true,
+    "status": "CONFIRMED"
+  }
+]
+```
+
+### 7. Cập nhật trạng thái lịch hẹn
+- **Endpoint**: `PATCH /api/appointments/{id}/status?status=CONFIRMED&consultantId=1`
+- **Quyền truy cập**: ROLE_CONSULTANT (tư vấn viên với consultantId tương ứng)
+- **Tham số đường dẫn**:
+  - `id`: ID của lịch hẹn
+- **Tham số truy vấn**:
+  - `status`: Trạng thái mới (PENDING, CONFIRMED, CANCELED, COMPLETED)
+  - `consultantId`: ID của tư vấn viên
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 1,
+  "customerName": "Lê Văn C",
+  "phoneNumber": "0987654321",
+  "email": "levanc@example.com",
+  "appointmentDate": "15/12/2023",
+  "appointmentTime": "14:30",
+  "topicName": "Tư vấn tâm lý",
+  "consultantName": "Nguyễn Văn A",
+  "isGuest": true,
+  "status": "CONFIRMED"
+}
+```
+
+### 8. Hủy lịch hẹn (người dùng đã đăng nhập)
+- **Endpoint**: `POST /api/appointments/{id}/cancel/user/{userId}`
+- **Quyền truy cập**: ROLE_MEMBER (người dùng với userId tương ứng)
+- **Tham số đường dẫn**:
+  - `id`: ID của lịch hẹn
+  - `userId`: ID của người dùng
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 2,
+  "customerName": "Phạm Thị D",
+  "phoneNumber": "0123456789",
+  "email": "phamthid@example.com",
+  "appointmentDate": "16/12/2023",
+  "appointmentTime": "10:00",
+  "topicName": "Tư vấn hướng nghiệp",
+  "consultantName": "Trần Thị B",
+  "isGuest": false,
+  "status": "CANCELED",
+  "userId": 3
+}
+```
+
+### 9. Hủy lịch hẹn (khách không đăng nhập)
+- **Endpoint**: `POST /api/appointments/{id}/cancel/guest?email=levanc@example.com`
+- **Quyền truy cập**: Không yêu cầu
+- **Tham số đường dẫn**:
+  - `id`: ID của lịch hẹn
+- **Tham số truy vấn**:
+  - `email`: Email của khách
+- **Response thành công (200 OK)**:
+```json
+{
+  "id": 1,
+  "customerName": "Lê Văn C",
+  "phoneNumber": "0987654321",
+  "email": "levanc@example.com",
+  "appointmentDate": "15/12/2023",
+  "appointmentTime": "14:30",
+  "topicName": "Tư vấn tâm lý",
+  "consultantName": "Nguyễn Văn A",
+  "isGuest": true,
+  "status": "CANCELED"
+}
+```
+
+## IV. Luồng làm việc cho Frontend
+
+### 1. Luồng tạo và quản lý Slot (dành cho tư vấn viên)
+
+```mermaid
+sequenceDiagram
+    actor Consultant as Tư vấn viên
+    participant Frontend
+    participant API
+    participant Backend
+    
+    Consultant->>Frontend: Đăng nhập vào hệ thống
+    Frontend->>API: POST /api/auth/login
+    API->>Frontend: Trả về token JWT
+    
+    Consultant->>Frontend: Truy cập quản lý slot
+    Frontend->>API: GET /api/slots/consultant/{consultantId}
+    API->>Frontend: Trả về danh sách slot hiện có
+    
+    Consultant->>Frontend: Tạo slot mới
+    Frontend->>API: POST /api/slots
+    API->>Backend: Lưu slot mới
+    API->>Frontend: Trả về thông tin slot đã tạo
+    
+    Consultant->>Frontend: Cập nhật slot
+    Frontend->>API: PUT /api/slots/{id}
+    API->>Backend: Cập nhật thông tin slot
+    API->>Frontend: Trả về thông tin slot đã cập nhật
+    
+    Consultant->>Frontend: Xóa slot
+    Frontend->>API: DELETE /api/slots/{id}
+    API->>Backend: Xóa slot
+    API->>Frontend: Xác nhận xóa thành công
+```
+
+### 2. Luồng đặt lịch hẹn (dành cho người dùng)
+
+```mermaid
+sequenceDiagram
+    actor User as Người dùng
+    participant Frontend
+    participant API
+    participant Backend
+    participant Email
+    
+    User->>Frontend: Truy cập trang đặt lịch hẹn
+    Frontend->>API: GET /api/topics
+    API->>Frontend: Trả về danh sách chủ đề tư vấn
+    
+    User->>Frontend: Điền thông tin và gửi form đặt lịch
+    Frontend->>API: POST /api/appointments
+    API->>Backend: Lưu thông tin lịch hẹn (không cần tư vấn viên)
+    Backend->>Email: Gửi email xác nhận đặt lịch
+    API->>Frontend: Trả về thông tin lịch hẹn đã tạo
+    
+    User->>Frontend: Xem lịch hẹn đã đặt
+    alt Người dùng đã đăng nhập
+        Frontend->>API: GET /api/appointments/user/{userId}
+    else Khách không đăng nhập
+        Frontend->>API: GET /api/appointments/guest?email=example@email.com
+    end
+    API->>Frontend: Trả về danh sách lịch hẹn
+    
+    User->>Frontend: Hủy lịch hẹn
+    alt Người dùng đã đăng nhập
+        Frontend->>API: POST /api/appointments/{id}/cancel/user/{userId}
+    else Khách không đăng nhập
+        Frontend->>API: POST /api/appointments/{id}/cancel/guest?email=example@email.com
+    end
+    API->>Backend: Cập nhật trạng thái lịch hẹn thành CANCELED
+    Backend->>Email: Gửi email thông báo hủy lịch hẹn
+    API->>Frontend: Trả về thông tin lịch hẹn đã hủy
+```
+
+### 3. Luồng xử lý lịch hẹn (dành cho tư vấn viên)
+
+```mermaid
+sequenceDiagram
+    actor Consultant as Tư vấn viên
+    participant Frontend
+    participant API
+    participant Backend
+    participant Email
+    
+    Consultant->>Frontend: Đăng nhập vào hệ thống
+    Frontend->>API: POST /api/auth/login
+    API->>Frontend: Trả về token JWT
+    
+    Consultant->>Frontend: Xem lịch hẹn chưa phân công
+    Frontend->>API: GET /api/consultant/appointments/unassigned
+    API->>Frontend: Trả về danh sách lịch hẹn chưa phân công
+    
+    Consultant->>Frontend: Nhận lịch hẹn
+    Frontend->>API: POST /api/consultant/{consultantId}/appointments/{appointmentId}/claim
+    API->>Backend: Cập nhật lịch hẹn với tư vấn viên và trạng thái CONFIRMED
+    Backend->>Email: Gửi email thông báo xác nhận lịch hẹn
+    API->>Frontend: Trả về thông tin lịch hẹn đã nhận
+    
+    Consultant->>Frontend: Xem lịch hẹn của mình
+    Frontend->>API: GET /api/appointments/consultant/{consultantId}
+    API->>Frontend: Trả về danh sách lịch hẹn của tư vấn viên
+    
+    Consultant->>Frontend: Cập nhật trạng thái lịch hẹn
+    Frontend->>API: PATCH /api/appointments/{id}/status?status=COMPLETED&consultantId={consultantId}
+    API->>Backend: Cập nhật trạng thái lịch hẹn
+    Backend->>Email: Gửi email thông báo cập nhật trạng thái
+    API->>Frontend: Trả về thông tin lịch hẹn đã cập nhật
+```
+
+## V. Hướng dẫn triển khai Frontend
+
+### 1. Cài đặt và cấu hình
+
+1. **Thiết lập dự án**:
+   - Sử dụng React, Vue.js hoặc Angular
+   - Cấu hình axios hoặc fetch để gọi API
+   - Thiết lập quản lý trạng thái (Redux, Vuex, Context API)
+
+2. **Xác thực và phân quyền**:
+   - Lưu trữ JWT token trong localStorage hoặc cookies
+   - Thêm token vào header Authorization cho mỗi request
+   - Kiểm tra quyền truy cập cho từng trang/chức năng
+
+### 2. Các trang chính cần triển khai
+
+1. **Trang chủ**:
+   - Giới thiệu dịch vụ tư vấn
+   - Form đặt lịch nhanh cho khách
+
+2. **Trang đặt lịch hẹn**:
+   - Form đầy đủ để đặt lịch hẹn
+   - Chọn chủ đề tư vấn
+   - Chọn ngày giờ
+   - Nhập thông tin liên hệ
+
+3. **Trang tra cứu lịch hẹn**:
+   - Tìm kiếm lịch hẹn theo email (cho khách)
+   - Xem danh sách lịch hẹn (cho người dùng đã đăng nhập)
+   - Hủy lịch hẹn
+
+4. **Dashboard tư vấn viên**:
+   - Quản lý slot làm việc (thêm, sửa, xóa)
+   - Xem lịch hẹn chưa phân công
+   - Nhận lịch hẹn
+   - Quản lý lịch hẹn đã nhận
+   - Cập nhật trạng thái lịch hẹn
+
+### 3. Các component chính
+
+1. **AppointmentForm**: Form đặt lịch hẹn
+2. **AppointmentList**: Hiển thị danh sách lịch hẹn
+3. **AppointmentDetail**: Hiển thị chi tiết lịch hẹn
+4. **SlotManager**: Quản lý slot của tư vấn viên
+5. **Calendar**: Hiển thị lịch làm việc
+6. **StatusUpdater**: Component cập nhật trạng thái lịch hẹn
+
+### 4. Xử lý lỗi và thông báo
+
+1. **Hiển thị thông báo**:
+   - Thành công: Đặt lịch thành công, nhận lịch thành công...
+   - Lỗi: Lỗi khi gọi API, lỗi xác thực...
+
+2. **Xử lý lỗi API**:
+   - Xử lý mã lỗi HTTP (400, 401, 403, 404, 500)
+   - Hiển thị thông báo lỗi từ server
+
+### 5. Responsive design
+
+- Đảm bảo giao diện hoạt động tốt trên desktop, tablet và mobile
+- Tối ưu hóa form đặt lịch cho thiết bị di động
+
+### 6. Testing
+
+1. **Unit testing**: Kiểm tra các component riêng lẻ
+2. **Integration testing**: Kiểm tra luồng làm việc đầy đủ
+3. **End-to-end testing**: Kiểm tra toàn bộ ứng dụng
+
+Với các thông tin chi tiết về API và luồng làm việc này, frontend developer có thể dễ dàng triển khai giao diện người dùng phù hợp với backend đã được phát triển, đảm bảo tính nhất quán và đầy đủ chức năng.
