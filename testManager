@@ -1,0 +1,167 @@
+# Phân tích chi tiết luồng Manager và hướng dẫn test
+
+## 1. Tổng quan luồng Manager
+
+Manager là vai trò quản lý trung gian trong hệ thống, có các chức năng chính:
+- Quản lý topic (thêm, sửa, xóa)
+- Duyệt nội dung (blogs, surveys, courses)
+- Xem thống kê (dashboard)
+- Tạo báo cáo (reports)
+- Quản lý nhân sự (staff, consultant)
+
+## 2. Phân tích luồng chi tiết
+
+### 2.1. Quản lý Topic
+
+**Luồng hoạt động:**
+1. Manager đăng nhập vào hệ thống
+2. Hệ thống xác thực JWT token và phân quyền
+3. Manager truy cập vào quản lý Topic
+4. Manager thực hiện các thao tác:
+   - Tạo mới topic (`POST /api/manager/topic`)
+   - Cập nhật topic (`PATCH /api/manager/topic/{id}`)
+   - Xóa topic (`DELETE /api/manager/topic/{id}`)
+   - Xem danh sách topic (`GET /api/manager/topics`)
+
+**Quy trình xử lý:**
+- Request từ client → ManagerController → TopicService → TopicRepo → Database
+- Database → TopicRepo → TopicService → ManagerController → Response
+
+### 2.2. Duyệt nội dung
+
+**Luồng duyệt Blog:**
+1. Staff tạo bài viết (trạng thái PENDING)
+2. Manager truy cập danh sách chờ duyệt (`GET /api/manager/blogs/pending`)
+3. Manager xem nội dung và quyết định:
+   - Duyệt bài (`PATCH /api/manager/blog/{id}/approve` với status=APPROVED)
+   - Từ chối (`PATCH /api/manager/blog/{id}/approve` với status=REJECTED và rejectionReason)
+4. Hệ thống cập nhật trạng thái blog và thông báo kết quả
+
+**Quy trình tương tự cho Survey và Course**
+
+### 2.3. Dashboard và báo cáo
+
+**Luồng Dashboard:**
+1. Manager truy cập dashboard (`GET /api/manager/dashboard/stats`)
+2. Hệ thống tính toán và trả về các số liệu:
+   - Số lượng staff và consultant
+   - Số lượng ghi danh khóa học
+   - Số lượng cuộc hẹn
+   - Có thể lọc theo thời gian (week/month/year)
+
+**Luồng Báo cáo:**
+1. Manager tạo báo cáo (`GET /api/manager/reports`)
+2. Manager chọn khoảng thời gian và loại báo cáo
+3. Hệ thống tổng hợp dữ liệu và trả về báo cáo chi tiết
+
+## 3. Hướng dẫn test
+
+### 3.1. Test quản lý Topic
+
+**Tạo mới Topic:**
+```bash
+curl -X POST http://localhost:8080/api/manager/topic \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Tư vấn sức khỏe tâm lý",
+    "description": "Các vấn đề liên quan đến sức khỏe tâm lý và tinh thần"
+  }'
+```
+
+**Cập nhật Topic:**
+```bash
+curl -X PATCH http://localhost:8080/api/manager/topic/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Tư vấn tâm lý",
+    "description": "Cập nhật mô tả về tư vấn tâm lý"
+  }'
+```
+
+**Xóa Topic:**
+```bash
+curl -X DELETE http://localhost:8080/api/manager/topic/1 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Lấy danh sách Topic:**
+```bash
+curl -X GET http://localhost:8080/api/manager/topics \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### 3.2. Test duyệt nội dung
+
+**Lấy danh sách Blog đang chờ duyệt:**
+```bash
+curl -X GET http://localhost:8080/api/manager/blogs/pending \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Duyệt Blog:**
+```bash
+curl -X PATCH http://localhost:8080/api/manager/blog/1/approve?status=APPROVED \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Từ chối Blog:**
+```bash
+curl -X PATCH "http://localhost:8080/api/manager/blog/1/approve?status=REJECTED&rejectionReason=Nội%20dung%20chưa%20phù%20hợp" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Tương tự cho Survey và Course**
+
+### 3.3. Test Dashboard và báo cáo
+
+**Xem Dashboard:**
+```bash
+curl -X GET http://localhost:8080/api/manager/dashboard/stats \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Xem Dashboard theo tuần:**
+```bash
+curl -X GET http://localhost:8080/api/manager/dashboard/stats?timeRange=week \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Tạo báo cáo:**
+```bash
+curl -X GET "http://localhost:8080/api/manager/reports?fromDate=01/01/2023&toDate=31/12/2023&reportType=summary" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### 3.4. Test quản lý nhân sự
+
+**Xem danh sách Staff:**
+```bash
+curl -X GET http://localhost:8080/api/manager/staff \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Xem danh sách Consultant:**
+```bash
+curl -X GET http://localhost:8080/api/manager/consultants \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+## 4. Lưu ý khi test
+
+1. **JWT Token**: Cần đăng nhập với tài khoản có vai trò ROLE_MANAGER hoặc ROLE_ADMIN để lấy token
+2. **Quyền hạn**: Các API chỉ chấp nhận request từ ROLE_MANAGER hoặc ROLE_ADMIN
+3. **Status Code**:
+   - 200: Thành công
+   - 201: Tạo mới thành công
+   - 400: Request không hợp lệ
+   - 401: Chưa xác thực
+   - 403: Không có quyền
+   - 404: Không tìm thấy tài nguyên
+4. **Trạng thái duyệt**:
+   - PENDING: Đang chờ duyệt
+   - APPROVED: Đã duyệt
+   - REJECTED: Đã từ chối
+
+Với các chức năng đã được triển khai, Manager có đầy đủ công cụ để quản lý nội dung, theo dõi hoạt động của hệ thống và tạo báo cáo theo yêu cầu.
