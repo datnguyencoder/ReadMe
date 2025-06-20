@@ -1,0 +1,359 @@
+# Phân tích chi tiết luồng Manager trong hệ thống
+
+## 1. Vai trò của Manager trong hệ thống
+
+Manager là người có quyền hạn cao hơn Staff và Consultant, có trách nhiệm:
+- Quản lý các chủ đề tư vấn (Topic)
+- Quản lý nội dung khảo sát (Survey)
+- Quản lý khóa học (Course)
+- Giám sát Staff và Consultant
+- Xem báo cáo thống kê
+
+## 2. Luồng đăng nhập và truy cập Dashboard
+
+### Bước 1: Đăng nhập vào hệ thống
+- **Mô tả**: Manager đăng nhập với tài khoản có quyền ROLE_MANAGER
+- **Frontend**: Form đăng nhập yêu cầu username/email và mật khẩu
+- **API sử dụng**: `POST /api/auth/login`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "username": "manager1",
+  "password": "password123"
+}
+```
+- **Dữ liệu nhận về**: JWT token và thông tin người dùng
+
+### Bước 2: Truy cập Dashboard
+- **Mô tả**: Manager truy cập vào trang dashboard của mình
+- **Frontend**: Hiển thị trang dashboard với các chức năng của Manager
+- **API sử dụng**: `GET /api/manager/dashboard`
+- **Dữ liệu nhận về**:
+```json
+{
+  "message": "Welcome to Manager Dashboard",
+  "role": "MANAGER"
+}
+```
+
+## 3. Luồng quản lý chủ đề tư vấn (Topic)
+
+### Bước 1: Xem danh sách chủ đề
+- **Mô tả**: Manager xem tất cả các chủ đề tư vấn trong hệ thống
+- **Frontend**: Hiển thị danh sách chủ đề với các tùy chọn quản lý
+- **API sử dụng**: `GET /api/topics`
+- **Dữ liệu nhận về**: Danh sách các chủ đề tư vấn
+
+### Bước 2: Xem chủ đề do mình tạo
+- **Mô tả**: Manager xem các chủ đề do chính mình tạo
+- **Frontend**: Tab "Chủ đề của tôi" trong trang quản lý chủ đề
+- **API sử dụng**: `GET /api/topics/me`
+- **Dữ liệu nhận về**: Danh sách các chủ đề do Manager tạo
+
+### Bước 3: Tạo chủ đề mới
+- **Mô tả**: Manager tạo một chủ đề tư vấn mới
+- **Frontend**: Form tạo chủ đề với các trường thông tin cần thiết
+- **API sử dụng**: `POST /api/manager/topic`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "name": "Tư vấn sức khỏe tâm thần",
+  "description": "Tư vấn về các vấn đề sức khỏe tâm thần, stress, lo âu...",
+  "active": true
+}
+```
+- **Dữ liệu nhận về**: Thông tin chủ đề đã tạo
+
+### Bước 4: Cập nhật chủ đề
+- **Mô tả**: Manager cập nhật thông tin chủ đề
+- **Frontend**: Form chỉnh sửa chủ đề
+- **API sử dụng**: `PATCH /api/manager/topic/{id}`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "name": "Tư vấn sức khỏe tâm thần và tinh thần",
+  "description": "Tư vấn về các vấn đề sức khỏe tâm thần, stress, lo âu, trầm cảm...",
+  "active": true
+}
+```
+- **Dữ liệu nhận về**: Thông tin chủ đề đã cập nhật
+
+## 4. Luồng quản lý khảo sát (Survey)
+
+### Bước 1: Xem danh sách khảo sát
+- **Mô tả**: Manager xem tất cả các khảo sát trong hệ thống
+- **Frontend**: Hiển thị danh sách khảo sát với các tùy chọn quản lý
+- **API sử dụng**: `GET /api/surveys`
+- **Dữ liệu nhận về**: Danh sách các khảo sát
+
+### Bước 2: Tạo khảo sát mới
+- **Mô tả**: Manager tạo một khảo sát mới
+- **Frontend**: Form tạo khảo sát với các trường thông tin và tải lên hình ảnh
+- **API sử dụng**: `POST /api/manager/survey`
+- **Dữ liệu gửi đi**: Form data với các trường:
+  - title: "Khảo sát sức khỏe tâm thần"
+  - description: "Đánh giá tình trạng sức khỏe tâm thần của bạn"
+  - image: [file hình ảnh]
+  - sections: [JSON với các phần và câu hỏi]
+- **Dữ liệu nhận về**: Thông tin khảo sát đã tạo
+
+### Bước 3: Xem kết quả khảo sát
+- **Mô tả**: Manager xem kết quả của các khảo sát
+- **Frontend**: Trang hiển thị thống kê và chi tiết kết quả khảo sát
+- **API sử dụng**: `GET /api/surveys/{id}/results`
+- **Dữ liệu nhận về**: Danh sách kết quả khảo sát và thống kê
+
+## 5. Luồng quản lý khóa học (Course)
+
+### Bước 1: Xem danh sách khóa học
+- **Mô tả**: Manager xem tất cả các khóa học trong hệ thống
+- **Frontend**: Hiển thị danh sách khóa học với các tùy chọn quản lý
+- **API sử dụng**: `GET /api/courses`
+- **Dữ liệu nhận về**: Danh sách các khóa học
+
+### Bước 2: Xem khóa học đã tạo
+- **Mô tả**: Manager xem các khóa học do mình tạo
+- **Frontend**: Tab "Khóa học của tôi" trong trang quản lý khóa học
+- **API sử dụng**: `GET /api/courses/created`
+- **Dữ liệu nhận về**: Danh sách các khóa học do Manager tạo
+
+### Bước 3: Tạo khóa học mới
+- **Mô tả**: Manager tạo một khóa học mới
+- **Frontend**: Form tạo khóa học với các trường thông tin cần thiết
+- **API sử dụng**: `POST /api/courses`
+- **Dữ liệu gửi đi**: Form data với các trường:
+  - title: "Khóa học quản lý stress"
+  - description: "Học cách quản lý stress hiệu quả"
+  - duration: 4
+  - image: [file hình ảnh]
+  - price: 500000
+- **Dữ liệu nhận về**: Thông tin khóa học đã tạo
+
+### Bước 4: Cập nhật khóa học
+- **Mô tả**: Manager cập nhật thông tin khóa học
+- **Frontend**: Form chỉnh sửa khóa học
+- **API sử dụng**: `PATCH /api/courses/{id}`
+- **Dữ liệu gửi đi**: Form data với các trường cần cập nhật
+- **Dữ liệu nhận về**: Thông tin khóa học đã cập nhật
+
+## 6. Luồng quản lý nhân sự
+
+### Bước 1: Xem danh sách Staff
+- **Mô tả**: Manager xem danh sách nhân viên Staff
+- **Frontend**: Trang quản lý Staff với thông tin và trạng thái
+- **API sử dụng**: `GET /api/manager/staff`
+- **Dữ liệu nhận về**: Danh sách Staff với thông tin chi tiết
+```json
+[
+  {
+    "id": 1,
+    "username": "staff1",
+    "fullName": "Nguyễn Văn Staff",
+    "email": "staff1@example.com",
+    "avatar": "https://example.com/avatar1.jpg",
+    "role": "ROLE_STAFF"
+  },
+  ...
+]
+```
+
+### Bước 2: Xem danh sách Consultant
+- **Mô tả**: Manager xem danh sách tư vấn viên
+- **Frontend**: Trang quản lý Consultant với thông tin và trạng thái
+- **API sử dụng**: `GET /api/manager/consultants`
+- **Dữ liệu nhận về**: Danh sách Consultant với thông tin chi tiết
+```json
+[
+  {
+    "id": 1,
+    "username": "consultant1",
+    "fullName": "Trần Thị Consultant",
+    "email": "consultant1@example.com",
+    "avatar": "https://example.com/avatar2.jpg",
+    "role": "ROLE_CONSULTANT"
+  },
+  ...
+]
+```
+
+### Bước 3: Xem chi tiết nhân sự
+- **Mô tả**: Manager xem thông tin chi tiết của một nhân viên
+- **Frontend**: Trang hiển thị thông tin chi tiết nhân viên
+- **API sử dụng**: `GET /api/admin/users/{userId}`
+- **Dữ liệu nhận về**: Thông tin chi tiết của nhân viên
+
+## 7. Luồng tạo báo cáo
+
+### Bước 1: Truy cập trang báo cáo
+- **Mô tả**: Manager truy cập vào trang tạo báo cáo
+- **Frontend**: Trang với các tùy chọn báo cáo và bộ lọc
+- **API sử dụng**: Chưa có API cụ thể, có thể sử dụng dashboard
+
+### Bước 2: Tạo báo cáo
+- **Mô tả**: Manager tạo báo cáo theo các tiêu chí
+- **Frontend**: Form chọn loại báo cáo, thời gian, và các tùy chọn khác
+- **API sử dụng**: `POST /api/manager/reports`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "reportType": "MONTHLY",
+  "startDate": "01/12/2023",
+  "endDate": "31/12/2023",
+  "categories": ["APPOINTMENTS", "COURSES", "SURVEYS"]
+}
+```
+- **Dữ liệu nhận về**: Thông tin báo cáo đã tạo
+
+## 8. Luồng phê duyệt nội dung
+
+### Bước 1: Xem nội dung chờ phê duyệt
+- **Mô tả**: Manager xem danh sách nội dung (blog, khóa học) chờ phê duyệt
+- **Frontend**: Trang hiển thị danh sách nội dung chờ phê duyệt
+- **API sử dụng**: `GET /api/manager/pending-content`
+- **Dữ liệu nhận về**: Danh sách nội dung chờ phê duyệt
+
+### Bước 2: Xem chi tiết nội dung
+- **Mô tả**: Manager xem chi tiết một nội dung cụ thể
+- **Frontend**: Trang hiển thị chi tiết nội dung
+- **API sử dụng**: Tùy theo loại nội dung:
+  - Blog: `GET /api/blogs/{id}`
+  - Khóa học: `GET /api/courses/{id}`
+- **Dữ liệu nhận về**: Chi tiết nội dung
+
+### Bước 3: Phê duyệt hoặc từ chối
+- **Mô tả**: Manager phê duyệt hoặc từ chối nội dung
+- **Frontend**: Nút "Phê duyệt" và "Từ chối" với trường nhập lý do
+- **API sử dụng**: `PATCH /api/manager/content/{id}/approve` hoặc `PATCH /api/manager/content/{id}/reject`
+- **Dữ liệu gửi đi**:
+```json
+{
+  "comment": "Nội dung đã được phê duyệt",
+  "status": "APPROVED"
+}
+```
+hoặc
+```json
+{
+  "comment": "Cần chỉnh sửa phần X, Y, Z",
+  "status": "REJECTED"
+}
+```
+- **Dữ liệu nhận về**: Thông tin cập nhật trạng thái
+
+## 9. Ví dụ cụ thể từ đầu đến cuối
+
+### Ví dụ: Quản lý chủ đề tư vấn
+
+1. **Manager đăng nhập**:
+   - Đăng nhập với tài khoản Manager
+   - API: `POST /api/auth/login`
+   - Nhận JWT token
+
+2. **Truy cập Dashboard**:
+   - Vào trang dashboard Manager
+   - API: `GET /api/manager/dashboard`
+   - Thấy tổng quan về hệ thống
+
+3. **Xem danh sách chủ đề**:
+   - Vào mục quản lý chủ đề
+   - API: `GET /api/topics`
+   - Thấy danh sách các chủ đề hiện có
+
+4. **Tạo chủ đề mới**:
+   - Nhấn nút "Tạo chủ đề mới"
+   - Điền thông tin chủ đề
+   - API: `POST /api/manager/topic`
+   - Chủ đề mới được tạo
+
+5. **Cập nhật chủ đề**:
+   - Chọn chủ đề cần cập nhật
+   - Chỉnh sửa thông tin
+   - API: `PATCH /api/manager/topic/{id}`
+   - Chủ đề được cập nhật
+
+### Ví dụ: Quản lý nhân sự và phê duyệt nội dung
+
+1. **Manager đăng nhập**:
+   - Đăng nhập với tài khoản Manager
+   - API: `POST /api/auth/login`
+   - Nhận JWT token
+
+2. **Xem danh sách Staff**:
+   - Vào mục quản lý nhân sự
+   - API: `GET /api/manager/staff`
+   - Thấy danh sách Staff
+
+3. **Xem nội dung chờ phê duyệt**:
+   - Vào mục nội dung chờ phê duyệt
+   - API: `GET /api/manager/pending-content`
+   - Thấy danh sách blog, khóa học chờ phê duyệt
+
+4. **Xem chi tiết blog**:
+   - Chọn một blog cần phê duyệt
+   - API: `GET /api/blogs/{id}`
+   - Đọc nội dung blog
+
+5. **Phê duyệt blog**:
+   - Nhấn nút "Phê duyệt"
+   - API: `PATCH /api/manager/content/{id}/approve`
+   - Blog được phê duyệt và xuất hiện trên trang chủ
+
+6. **Tạo báo cáo**:
+   - Vào mục báo cáo
+   - Chọn loại báo cáo và thời gian
+   - API: `POST /api/manager/reports`
+   - Nhận báo cáo tổng hợp
+
+## 10. Giao diện người dùng cho Manager
+
+### 1. Dashboard
+- **Thành phần**:
+  - Tổng quan số liệu (số lượng người dùng, lịch hẹn, khóa học)
+  - Biểu đồ hoạt động
+  - Thông báo và nhiệm vụ mới
+
+### 2. Quản lý chủ đề
+- **Thành phần**:
+  - Danh sách chủ đề (bảng)
+  - Form tạo/chỉnh sửa chủ đề
+  - Bộ lọc và tìm kiếm
+
+### 3. Quản lý khảo sát
+- **Thành phần**:
+  - Danh sách khảo sát (bảng)
+  - Form tạo/chỉnh sửa khảo sát
+  - Xem kết quả khảo sát (biểu đồ)
+
+### 4. Quản lý khóa học
+- **Thành phần**:
+  - Danh sách khóa học (bảng/lưới)
+  - Form tạo/chỉnh sửa khóa học
+  - Thống kê đăng ký khóa học
+
+### 5. Quản lý nhân sự
+- **Thành phần**:
+  - Danh sách Staff/Consultant (bảng)
+  - Xem chi tiết nhân viên
+  - Bộ lọc theo vai trò, trạng thái
+
+### 6. Phê duyệt nội dung
+- **Thành phần**:
+  - Danh sách nội dung chờ phê duyệt
+  - Xem chi tiết nội dung
+  - Nút phê duyệt/từ chối với trường nhập lý do
+
+### 7. Báo cáo
+- **Thành phần**:
+  - Form chọn loại báo cáo
+  - Bộ lọc thời gian
+  - Hiển thị báo cáo (bảng, biểu đồ)
+  - Tùy chọn xuất báo cáo (PDF, Excel)
+
+## 11. Lưu ý quan trọng cho Manager
+
+1. **Phân quyền**: Manager có quyền cao hơn Staff và Consultant, nhưng thấp hơn Admin
+2. **Phê duyệt nội dung**: Chỉ nội dung được Manager phê duyệt mới hiển thị cho người dùng
+3. **Quản lý nhân sự**: Manager có thể xem thông tin nhân viên nhưng không thể thêm/xóa (quyền của Admin)
+4. **Báo cáo**: Manager có thể tạo và xem báo cáo để đưa ra quyết định
+5. **Chủ đề và khảo sát**: Manager có toàn quyền quản lý chủ đề tư vấn và khảo sát
+
