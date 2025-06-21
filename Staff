@@ -1,0 +1,76 @@
+# Phân tích luồng hoạt động của Staff trong hệ thống
+
+## 1. Quản lý khảo sát (Survey)
+
+### Tạo khảo sát mới
+1. Staff đăng nhập vào hệ thống
+2. Staff truy cập API `POST /api/staff/survey` với dữ liệu khảo sát
+3. Hệ thống kiểm tra vai trò Staff thông qua `@PreAuthorize("hasAuthority('ROLE_STAFF')")`
+4. Khảo sát được tạo với trạng thái mặc định là `ApprovalStatus.PENDING`
+5. Khảo sát được lưu vào cơ sở dữ liệu với thông tin người tạo là Staff hiện tại
+
+### Xem danh sách khảo sát
+1. Staff truy cập API `GET /api/staff/surveys`
+2. Hệ thống lấy danh sách khảo sát của Staff hiện tại từ `surveyRepository.findByCreatedBy(currentUser)`
+3. Trả về danh sách khảo sát dưới dạng `SurveyManagerResponse` bao gồm thông tin về trạng thái phê duyệt
+
+### Cập nhật khảo sát
+1. Staff truy cập API `PUT /api/staff/survey/{id}` với dữ liệu cập nhật
+2. Hệ thống kiểm tra:
+   - Khảo sát tồn tại
+   - Staff hiện tại là người tạo khảo sát
+   - Khảo sát có trạng thái là `PENDING` hoặc `REJECTED`
+3. Nếu thỏa mãn, khảo sát được cập nhật và đặt lại trạng thái thành `PENDING`
+
+## 2. Quản lý bài viết (Blog)
+
+### Tạo bài viết mới
+1. Staff truy cập API `POST /api/staff/blog` với dữ liệu bài viết
+2. Bài viết được tạo với trạng thái mặc định là `ApprovalStatus.PENDING`
+3. Bài viết được lưu vào cơ sở dữ liệu với thông tin người tạo là Staff hiện tại
+
+### Xem danh sách bài viết
+1. Staff truy cập API `GET /api/staff/blogs`
+2. Hệ thống lấy danh sách bài viết của Staff hiện tại thông qua `blogService.getCreatedBlogs()`
+3. Trả về danh sách bài viết dưới dạng `BlogResponse`
+
+### Cập nhật bài viết
+1. Staff truy cập API `PUT /api/staff/blog/{id}` với dữ liệu cập nhật
+2. Hệ thống kiểm tra:
+   - Bài viết tồn tại
+   - Staff hiện tại là người tạo bài viết
+   - Bài viết có trạng thái là `PENDING` hoặc `REJECTED`
+3. Nếu thỏa mãn, bài viết được cập nhật và đặt lại trạng thái thành `PENDING`
+
+## 3. Quản lý khóa học (Course)
+
+### Tạo khóa học mới
+1. Staff truy cập API `POST /api/staff/course` với dữ liệu khóa học
+2. Khóa học được tạo với trạng thái mặc định là `ApprovalStatus.PENDING`
+3. Khóa học được lưu vào cơ sở dữ liệu với thông tin người tạo là Staff hiện tại
+
+### Xem danh sách khóa học
+1. Staff truy cập API `GET /api/staff/courses`
+2. Hệ thống lấy danh sách khóa học của Staff hiện tại thông qua `courseService.getCreatedCourses()`
+3. Trả về danh sách khóa học dưới dạng `CourseResponse`
+
+### Cập nhật khóa học
+1. Staff truy cập API `PUT /api/staff/course/{id}` với dữ liệu cập nhật
+2. Hệ thống kiểm tra quyền cập nhật thông qua `courseService.updateCourse()`
+3. Nếu thỏa mãn, khóa học được cập nhật và đặt lại trạng thái thành `PENDING`
+
+## 4. Quy trình phê duyệt nội dung
+
+1. Staff tạo/cập nhật nội dung (khảo sát, bài viết, khóa học)
+2. Nội dung được đặt trạng thái `PENDING`
+3. Manager xem danh sách nội dung chờ phê duyệt qua các API:
+   - `GET /api/manager/surveys/pending`
+   - `GET /api/manager/blogs/pending`
+   - `GET /api/manager/courses/pending`
+4. Manager phê duyệt hoặc từ chối nội dung qua các API:
+   - `PATCH /api/manager/surveys/{id}/approve` hoặc `reject`
+   - `PATCH /api/manager/blogs/{id}/approve` hoặc `reject`
+   - `PATCH /api/manager/courses/{id}/approve` hoặc `reject`
+5. Nếu được phê duyệt (`APPROVED`), nội dung sẽ hiển thị cho người dùng
+6. Nếu bị từ chối (`REJECTED`), Staff có thể cập nhật và gửi lại
+
