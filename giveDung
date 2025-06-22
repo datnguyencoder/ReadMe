@@ -1,0 +1,308 @@
+
+# Phân tích chi tiết luồng hoạt động của Consultant, Manager và Staff trong hệ thống DUPSS
+
+## 1. LUỒNG HOẠT ĐỘNG CỦA CONSULTANT (TƯ VẤN VIÊN)
+
+### 1.1. Mô hình dữ liệu Consultant
+
+- **Entity**: `Consultant` kế thừa từ `User`
+- **Thuộc tính đặc biệt**: 
+  - `specialization`: Chuyên môn của tư vấn viên
+  - `appointments`: Danh sách các cuộc hẹn tư vấn
+  - `slots`: Danh sách các khung giờ làm việc
+
+### 1.2. Quy trình làm việc của Consultant
+
+#### a. Đăng nhập và truy cập Dashboard
+- **API**: `GET /api/consultant/dashboard`
+- **Quyền**: `ROLE_CONSULTANT`
+- **Frontend**: Hiển thị dashboard với các chức năng chính của tư vấn viên
+
+#### b. Quản lý khung giờ làm việc (Slots)
+- **Tạo khung giờ làm việc**:
+  - **API**: `POST /api/slots`
+  - **Request Body**: `SlotRequestDto` (ngày, giờ bắt đầu, giờ kết thúc)
+  - **Frontend**: Form đăng ký khung giờ làm việc với lịch trực quan
+  
+- **Xem khung giờ làm việc của mình**:
+  - **API**: `GET /api/slots/consultant/{consultantId}`
+  - **Frontend**: Hiển thị lịch với các khung giờ đã đăng ký
+
+- **Cập nhật trạng thái khung giờ**:
+  - **API**: `PATCH /api/slots/{slotId}/availability`
+  - **Frontend**: Toggle button để bật/tắt trạng thái khả dụng của slot
+
+#### c. Quản lý cuộc hẹn tư vấn
+
+- **Xem danh sách cuộc hẹn chưa được phân công**:
+  - **API**: `GET /api/consultant/appointments/unassigned`
+  - **Frontend**: Danh sách các cuộc hẹn đang chờ tư vấn viên nhận
+
+- **Nhận cuộc hẹn**:
+  - **API**: `POST /api/consultant/{consultantId}/appointments/{appointmentId}/claim`
+  - **Quy trình**:
+    1. Tư vấn viên chọn cuộc hẹn từ danh sách chưa phân công
+    2. Hệ thống gán tư vấn viên cho cuộc hẹn
+    3. Trạng thái cuộc hẹn chuyển từ "PENDING" sang "CONFIRMED"
+    4. Hệ thống gửi email thông báo cho khách hàng
+  - **Frontend**: Button "Nhận cuộc hẹn" trên mỗi cuộc hẹn chưa phân công
+
+- **Xem danh sách cuộc hẹn của mình**:
+  - **API**: `GET /api/appointments/consultant/{consultantId}`
+  - **Frontend**: Danh sách các cuộc hẹn đã được gán cho tư vấn viên
+
+- **Xem lịch sử cuộc hẹn đã hoàn thành hoặc đã hủy**:
+  - **API**: `GET /api/appointments/consultant/{consultantId}/history`
+  - **Frontend**: Danh sách lịch sử các cuộc hẹn đã hoàn thành/hủy
+
+- **Cập nhật trạng thái cuộc hẹn**:
+  - **API**: `PATCH /api/appointments/{id}/status`
+  - **Trạng thái có thể cập nhật**:
+    - `CONFIRMED`: Đã xác nhận
+    - `COMPLETED`: Đã hoàn thành
+    - `CANCELED`: Đã hủy
+  - **Frontend**: Dropdown hoặc các button để thay đổi trạng thái
+
+### 1.3. Lưu ý quan trọng cho Frontend
+
+1. **Hiển thị lịch làm việc**:
+   - Sử dụng component lịch (Calendar) để hiển thị các khung giờ làm việc
+   - Phân biệt màu sắc cho các trạng thái: khả dụng, đã đặt, đã hoàn thành
+
+2. **Quản lý cuộc hẹn**:
+   - Hiển thị thông báo khi có cuộc hẹn mới chưa phân công
+   - Phân loại cuộc hẹn theo trạng thái: chờ xác nhận, đã xác nhận, đã hoàn thành, đã hủy
+   - Hiển thị thông tin chi tiết của khách hàng: tên, email, số điện thoại, chủ đề tư vấn
+
+3. **Xử lý lỗi đặc biệt**:
+   - Khi ID tư vấn viên không tồn tại: Hiển thị thông báo "Không tìm thấy tư vấn viên"
+   - Khi không có cuộc hẹn: Hiển thị danh sách rỗng thay vì báo lỗi
+
+## 2. LUỒNG HOẠT ĐỘNG CỦA MANAGER (QUẢN LÝ)
+
+### 2.1. Quyền hạn của Manager
+
+- Cao hơn Staff và Consultant
+- Có quyền phê duyệt/từ chối nội dung do Staff tạo
+- Có quyền quản lý danh sách Staff và Consultant
+
+### 2.2. Quy trình làm việc của Manager
+
+#### a. Đăng nhập và truy cập Dashboard
+- **API**: `GET /api/manager/dashboard`
+- **Quyền**: `ROLE_MANAGER`
+- **Frontend**: Hiển thị dashboard với các chức năng quản lý
+
+#### b. Quản lý Staff và Consultant
+- **Xem danh sách Staff**:
+  - **API**: `GET /api/manager/staff`
+  - **Frontend**: Danh sách Staff với thông tin cơ bản
+
+- **Xem danh sách Consultant**:
+  - **API**: `GET /api/manager/consultants`
+  - **Frontend**: Danh sách Consultant với thông tin cơ bản
+
+#### c. Quản lý khóa học (Courses)
+- **Xem tất cả khóa học**:
+  - **API**: `GET /api/manager/courses/all`
+  - **Frontend**: Danh sách tất cả khóa học với thông tin chi tiết và trạng thái
+
+- **Xem khóa học đang chờ phê duyệt**:
+  - **API**: `GET /api/manager/courses/pending`
+  - **Frontend**: Danh sách khóa học có trạng thái PENDING
+
+- **Phê duyệt khóa học**:
+  - **API**: `PATCH /api/manager/courses/{id}/approve`
+  - **Quy trình**:
+    1. Cập nhật trạng thái từ PENDING sang APPROVED
+    2. Lưu thông tin người phê duyệt (checkedBy)
+  - **Frontend**: Button "Phê duyệt" trên mỗi khóa học đang chờ
+
+- **Từ chối khóa học**:
+  - **API**: `PATCH /api/manager/courses/{id}/reject`
+  - **Quy trình**: 
+    1. Cập nhật trạng thái từ PENDING sang REJECTED
+    2. Lưu thông tin người từ chối (checkedBy)
+  - **Frontend**: Button "Từ chối" trên mỗi khóa học đang chờ
+
+#### d. Quản lý bài viết (Blogs)
+- **Xem tất cả bài viết**:
+  - **API**: `GET /api/manager/blogs/all`
+  - **Frontend**: Danh sách tất cả bài viết với thông tin chi tiết và trạng thái
+
+- **Xem bài viết đang chờ phê duyệt**:
+  - **API**: `GET /api/manager/blogs/pending`
+  - **Frontend**: Danh sách bài viết có trạng thái PENDING
+
+- **Phê duyệt bài viết**:
+  - **API**: `PATCH /api/manager/blogs/{id}/approve`
+  - **Frontend**: Button "Phê duyệt" trên mỗi bài viết đang chờ
+
+- **Từ chối bài viết**:
+  - **API**: `PATCH /api/manager/blogs/{id}/reject`
+  - **Frontend**: Button "Từ chối" trên mỗi bài viết đang chờ
+
+#### e. Quản lý khảo sát (Surveys)
+- **Xem tất cả khảo sát**:
+  - **API**: `GET /api/manager/surveys/all`
+  - **Frontend**: Danh sách tất cả khảo sát với thông tin chi tiết và trạng thái
+
+- **Xem khảo sát đang chờ phê duyệt**:
+  - **API**: `GET /api/manager/surveys/pending`
+  - **Frontend**: Danh sách khảo sát có trạng thái PENDING
+
+- **Phê duyệt khảo sát**:
+  - **API**: `PATCH /api/manager/surveys/{id}/approve`
+  - **Frontend**: Button "Phê duyệt" trên mỗi khảo sát đang chờ
+
+- **Từ chối khảo sát**:
+  - **API**: `PATCH /api/manager/surveys/{id}/reject`
+  - **Frontend**: Button "Từ chối" trên mỗi khảo sát đang chờ
+
+#### f. Quản lý chủ đề (Topics)
+- **Tạo chủ đề mới**:
+  - **API**: `POST /api/manager/topic`
+  - **Frontend**: Form tạo chủ đề mới
+
+- **Cập nhật chủ đề**:
+  - **API**: `PATCH /api/manager/topic/{id}`
+  - **Frontend**: Form cập nhật thông tin chủ đề
+
+- **Xóa chủ đề**:
+  - **API**: `PATCH /api/manager/topic/delete/{id}`
+  - **Frontend**: Button xóa chủ đề
+
+### 2.3. Lưu ý quan trọng cho Frontend
+
+1. **Hiển thị thông tin người duyệt**:
+   - Hiển thị trường `checkedBy` trong danh sách nội dung đã được duyệt/từ chối
+   - Thêm cột "Người duyệt" trong các bảng hiển thị
+
+2. **Quản lý nội dung**:
+   - Phân loại nội dung theo trạng thái: đang chờ (PENDING), đã duyệt (APPROVED), đã từ chối (REJECTED)
+   - Hiển thị thông tin chi tiết của nội dung trước khi duyệt/từ chối
+   - Có thể thêm chức năng preview nội dung
+
+3. **Dashboard thống kê**:
+   - Hiển thị số lượng nội dung đang chờ duyệt
+   - Thống kê số lượng nội dung đã duyệt/từ chối theo thời gian
+
+## 3. LUỒNG HOẠT ĐỘNG CỦA STAFF (NHÂN VIÊN)
+
+### 3.1. Quyền hạn của Staff
+
+- Thấp hơn Manager và Consultant
+- Có quyền tạo nội dung: bài viết, khóa học, khảo sát
+- Không có quyền phê duyệt nội dung
+
+### 3.2. Quy trình làm việc của Staff
+
+#### a. Đăng nhập và truy cập Dashboard
+- **API**: `GET /api/staff/dashboard`
+- **Quyền**: `ROLE_STAFF`
+- **Frontend**: Hiển thị dashboard với các chức năng tạo nội dung
+
+#### b. Quản lý bài viết (Blogs)
+- **Tạo bài viết mới**:
+  - **API**: `POST /api/staff/blog`
+  - **Request Body**: `BlogRequest` (multipart/form-data)
+  - **Quy trình**:
+    1. Staff tạo bài viết mới
+    2. Trạng thái mặc định là PENDING
+    3. Chờ Manager phê duyệt
+  - **Frontend**: Form tạo bài viết với rich text editor và upload ảnh
+
+- **Xem danh sách bài viết đã tạo**:
+  - **API**: `GET /api/staff/blogs`
+  - **Frontend**: Danh sách bài viết với trạng thái phê duyệt
+
+- **Cập nhật bài viết**:
+  - **API**: `PUT /api/staff/blog/{id}`
+  - **Điều kiện**: Chỉ có thể cập nhật bài viết ở trạng thái PENDING hoặc REJECTED
+  - **Frontend**: Form cập nhật bài viết, disabled nếu đã được phê duyệt
+
+#### c. Quản lý khóa học (Courses)
+- **Tạo khóa học mới**:
+  - **API**: `POST /api/staff/course`
+  - **Request Body**: `CourseCreateRequest` (multipart/form-data)
+  - **Frontend**: Form tạo khóa học với các trường thông tin và upload ảnh
+
+- **Xem danh sách khóa học đã tạo**:
+  - **API**: `GET /api/staff/courses`
+  - **Frontend**: Danh sách khóa học với trạng thái phê duyệt
+
+- **Cập nhật khóa học**:
+  - **API**: `PUT /api/staff/course/{id}`
+  - **Điều kiện**: Chỉ có thể cập nhật khóa học ở trạng thái PENDING hoặc REJECTED
+  - **Frontend**: Form cập nhật khóa học, disabled nếu đã được phê duyệt
+
+#### d. Quản lý khảo sát (Surveys)
+- **Tạo khảo sát mới**:
+  - **API**: `POST /api/survey` hoặc `POST /api/staff/survey`
+  - **Request Body**: `SurveyCreateRequest` (multipart/form-data)
+  - **Frontend**: Form tạo khảo sát với các câu hỏi và lựa chọn
+
+- **Xem danh sách khảo sát đã tạo**:
+  - **API**: `GET /api/staff/surveys`
+  - **Frontend**: Danh sách khảo sát với trạng thái phê duyệt
+
+- **Cập nhật khảo sát**:
+  - **API**: `PUT /api/staff/survey/{id}`
+  - **Điều kiện**: Chỉ có thể cập nhật khảo sát ở trạng thái PENDING hoặc REJECTED
+  - **Frontend**: Form cập nhật khảo sát, disabled nếu đã được phê duyệt
+
+### 3.3. Lưu ý quan trọng cho Frontend
+
+1. **Hiển thị trạng thái nội dung**:
+   - Sử dụng màu sắc hoặc badge để phân biệt trạng thái: PENDING (vàng), APPROVED (xanh), REJECTED (đỏ)
+   - Hiển thị thông báo khi nội dung được phê duyệt hoặc từ chối
+
+2. **Form tạo/cập nhật nội dung**:
+   - Sử dụng rich text editor cho nội dung bài viết và mô tả khóa học
+   - Hỗ trợ upload nhiều ảnh cho bài viết
+   - Kiểm tra validation trước khi submit
+
+3. **Xử lý phản hồi từ Manager**:
+   - Hiển thị lý do từ chối (nếu có) khi nội dung bị từ chối
+   - Cho phép Staff chỉnh sửa và gửi lại nội dung bị từ chối
+
+## 4. TỔNG QUAN QUY TRÌNH DUYỆT NỘI DUNG
+
+### 4.1. Quy trình duyệt bài viết/khóa học/khảo sát
+
+1. **Staff tạo nội dung mới**:
+   - Nội dung được tạo với trạng thái mặc định là PENDING
+   - Thông tin người tạo (createdBy/author) được lưu lại
+
+2. **Manager xem danh sách nội dung chờ duyệt**:
+   - Sử dụng API get pending content tương ứng
+   - Xem chi tiết nội dung trước khi quyết định
+
+3. **Manager phê duyệt hoặc từ chối**:
+   - Nếu phê duyệt: Trạng thái chuyển thành APPROVED
+   - Nếu từ chối: Trạng thái chuyển thành REJECTED
+   - Thông tin người duyệt (checkedBy) được lưu lại
+
+4. **Staff xem kết quả duyệt**:
+   - Nếu được duyệt: Nội dung sẽ được hiển thị công khai
+   - Nếu bị từ chối: Staff có thể chỉnh sửa và gửi lại
+
+### 4.2. Quy trình xử lý cuộc hẹn tư vấn
+
+1. **Khách hàng đặt lịch tư vấn**:
+   - Cuộc hẹn được tạo với trạng thái PENDING
+   - Consultant mặc định là placeholder (ID = 2)
+
+2. **Consultant xem danh sách cuộc hẹn chưa phân công**:
+   - Sử dụng API getUnassignedAppointments()
+   - Hiển thị thông tin cuộc hẹn: người đặt, chủ đề, thời gian
+
+3. **Consultant nhận cuộc hẹn**:
+   - Sử dụng API claimAppointment()
+   - Trạng thái chuyển từ PENDING sang CONFIRMED
+   - Email thông báo được gửi cho khách hàng
+
+4. **Consultant thực hiện tư vấn và cập nhật trạng thái**:
+   - Sau khi tư vấn xong: Cập nhật trạng thái thành COMPLETED
+   - Nếu cần hủy: Cập nhật trạng thái thành CANCELED
+
